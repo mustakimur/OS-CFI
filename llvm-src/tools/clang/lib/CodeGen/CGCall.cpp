@@ -38,8 +38,7 @@
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/Transforms/Utils/Local.h"
-#include <iostream>
-using namespace std;
+
 using namespace clang;
 using namespace CodeGen;
 
@@ -4263,101 +4262,119 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
   SmallVector<llvm::OperandBundleDef, 1> BundleList =
       getBundlesForFunclet(CalleePtr);
 
-  /* [oCFI] c-style function pointer iCall [oCFI] */
+  /*
+   * OS-CFI clang codegen modification to instrument reference monitor for
+   * C-style indirect call
+   * Beginning of modification
+   */
   if (!CalleePtr->hasName() && !Callee.isVirtual()) {
-    llvm::Value *tCall = CalleePtr;
+    llvm::Value *tempCalleePtr = CalleePtr;
     while (1) {
-      if (isa<llvm::LoadInst>(tCall)) {
-        auto *load = dyn_cast<llvm::LoadInst>(tCall);
+      if (isa<llvm::LoadInst>(tempCalleePtr)) {
+        auto *loadCalleePtr = dyn_cast<llvm::LoadInst>(tempCalleePtr);
 
-        llvm::Value *ptrAddr = EmitCastToVoidPtr(load->getPointerOperand());
-        llvm::Value *calleePtr = Builder.CreatePtrToInt(CalleePtr, CGM.Int64Ty);
+        // collect calleePtr address and value
+        llvm::Value *calleePtrAddr =
+            EmitCastToVoidPtr(loadCalleePtr->getPointerOperand());
+        llvm::Value *calleePtrVal =
+            Builder.CreatePtrToInt(CalleePtr, CGM.Int64Ty);
 
-        /* oCFI pCall-scout-monitor */
-        llvm::FunctionType *rftype = llvm::FunctionType::get(
+        // prepare to call reference monitor
+        llvm::FunctionType *preftype = llvm::FunctionType::get(
             CGM.VoidTy, {CGM.VoidPtrTy, CGM.Int64Ty}, false);
         llvm::Constant *rf =
-            CGM.CreateRuntimeFunction(rftype, "pcall_reference_monitor");
+            CGM.CreateRuntimeFunction(preftype, "pcall_reference_monitor");
 
-        llvm::CallInst *rfcall = Builder.CreateCall(rf, {ptrAddr, calleePtr});
+        Builder.CreateCall(rf, {calleePtrAddr, calleePtrVal});
         break;
-      } else if (isa<llvm::BitCastInst>(tCall)) {
-        // a special case for explicit casting pCall
-        auto *bitcast = dyn_cast<llvm::BitCastInst>(tCall);
-        tCall = bitcast->getOperand(0);
-      } else if (isa<llvm::PHINode>(tCall)) {
-        // a special case for point-to-member pCall
-        auto *phi = dyn_cast<llvm::PHINode>(CalleePtr);
+      } else if (isa<llvm::BitCastInst>(tempCalleePtr)) {
+        // if current IR is for casting the calleePtr to another type
+        auto *castCalleePtr = dyn_cast<llvm::BitCastInst>(tempCalleePtr);
+        tempCalleePtr = castCalleePtr->getOperand(0);
+      } else if (isa<llvm::PHINode>(tempCalleePtr)) {
+        // if current IR is a phi node because of pointer-to-member-function
+        auto *phiCalleePtr = dyn_cast<llvm::PHINode>(tempCalleePtr);
 
-        llvm::IRBuilder<> PhiBuilder(phi);
-        llvm::PHINode *addrPhi =
-            PhiBuilder.CreatePHI(CGM.VoidPtrTy, phi->getNumIncomingValues());
+        // to collect phi calleePtr address, we need to create another phi node
+        // in parallel
+        llvm::IRBuilder<> PhiBuilder(phiCalleePtr);
+        llvm::PHINode *phiCalleePtrAddr = PhiBuilder.CreatePHI(
+            CGM.VoidPtrTy, phiCalleePtr->getNumIncomingValues());
 
-        for (unsigned int i = 0; i < phi->getNumIncomingValues(); i++) {
-          llvm::BasicBlock *bb = phi->getIncomingBlock(i);
-          llvm::Value *value = phi->getIncomingValue(i);
-          llvm::Instruction *tinst = bb->getTerminator();
+        // replicate the same as calleePtr phi node
+        for (unsigned int i = 0; i < phiCalleePtr->getNumIncomingValues();
+             i++) {
+          llvm::BasicBlock *bb = phiCalleePtr->getIncomingBlock(i);
+          llvm::Value *value = phiCalleePtr->getIncomingValue(i);
+          llvm::Instruction *terminst = bb->getTerminator();
 
           while (1) {
             if (isa<llvm::LoadInst>(value)) {
-              auto *load = dyn_cast<llvm::LoadInst>(value);
-              llvm::IRBuilder<> BBBuilder(tinst);
-              llvm::Value *tval = BBBuilder.CreateBitCast(
-                  load->getPointerOperand(), CGM.VoidPtrTy);
-              addrPhi->addIncoming(tval, bb);
+              auto *phiload = dyn_cast<llvm::LoadInst>(value);
+              llvm::IRBuilder<> BBBuilder(terminst);
+              llvm::Value *phival = BBBuilder.CreateBitCast(
+                  phiload->getPointerOperand(), CGM.VoidPtrTy);
+              phiCalleePtrAddr->addIncoming(phival, bb);
               break;
             } else if (isa<llvm::BitCastInst>(value)) {
-              auto *bitcast = dyn_cast<llvm::BitCastInst>(value);
-              value = bitcast->getOperand(0);
+              auto *phicast = dyn_cast<llvm::BitCastInst>(value);
+              value = phicast->getOperand(0);
             } else if (isa<llvm::IntToPtrInst>(value)) {
-              auto *cast = dyn_cast<llvm::IntToPtrInst>(value);
-              value = cast->getOperand(0);
+              auto *phiipcast = dyn_cast<llvm::IntToPtrInst>(value);
+              value = phiipcast->getOperand(0);
             } else if (isa<llvm::ExtractValueInst>(value)) {
-              auto *extract = dyn_cast<llvm::ExtractValueInst>(value);
-              value = extract->getOperand(0);
+              auto *phiextract = dyn_cast<llvm::ExtractValueInst>(value);
+              value = phiextract->getOperand(0);
             } else {
-              // log this event to track missing cases
-              cerr << "[oCFI-LOG] a missing case log for pCall-scout-monitor "
-                      "... "
-                   << endl;
-              cerr << "--------------------" << endl;
-              // CalleePtr->dump();
-              cerr << "--------------------" << endl;
-              cerr << Loc.printToString(CGM.getContext().getSourceManager())
-                   << endl;
-              cerr << "--------------------" << endl << endl;
+              llvm::errs()
+                  << "[OSCFI-LLVM-INSTRUMENT] Following case requires to "
+                     "handle (From phi node handler) ...\n";
+              llvm::errs()
+                  << "-------------------------------------------------\n";
+              llvm::errs() << Loc.printToString(
+                                  CGM.getContext().getSourceManager())
+                           << "\n";
+              llvm::errs()
+                  << "-------------------------------------------------\n";
               break;
             }
           }
         }
 
-        llvm::Value *calleePtr = Builder.CreatePtrToInt(CalleePtr, CGM.Int64Ty);
-        llvm::FunctionType *rftype = llvm::FunctionType::get(
+        llvm::Value *calleePtrVal =
+            Builder.CreatePtrToInt(CalleePtr, CGM.Int64Ty);
+
+        // prepare to call reference monitor
+        llvm::FunctionType *preftype = llvm::FunctionType::get(
             CGM.VoidTy, {CGM.VoidPtrTy, CGM.Int64Ty}, false);
         llvm::Constant *rf =
-            CGM.CreateRuntimeFunction(rftype, "pcall_reference_monitor");
+            CGM.CreateRuntimeFunction(preftype, "pcall_reference_monitor");
 
-        llvm::CallInst *rfcall = Builder.CreateCall(rf, {addrPhi, calleePtr});
+        Builder.CreateCall(rf, {phiCalleePtrAddr, calleePtrVal});
         break;
-      } else if (isa<llvm::IntToPtrInst>(tCall)) {
-        auto *cast = dyn_cast<llvm::IntToPtrInst>(tCall);
-        tCall = cast->getOperand(0);
-      } else if (isa<llvm::ExtractValueInst>(tCall)) {
-        auto *extract = dyn_cast<llvm::ExtractValueInst>(tCall);
-        tCall = extract->getOperand(0);
+      } else if (isa<llvm::IntToPtrInst>(tempCalleePtr)) {
+        auto *cast = dyn_cast<llvm::IntToPtrInst>(tempCalleePtr);
+        tempCalleePtr = cast->getOperand(0);
+      } else if (isa<llvm::ExtractValueInst>(tempCalleePtr)) {
+        auto *extract = dyn_cast<llvm::ExtractValueInst>(tempCalleePtr);
+        tempCalleePtr = extract->getOperand(0);
       } else {
         // log this event to track missing cases
-        cerr << "[oCFI-LOG] a missing case log for pCall-scout-monitor ..."
-             << endl;
-        cerr << "--------------------" << endl;
-        // CalleePtr->dump();
-        cerr << "--------------------" << endl;
-        cerr << Loc.printToString(CGM.getContext().getSourceManager()) << endl;
-        cerr << "--------------------" << endl << endl;
+        llvm::errs() << "[OSCFI-LLVM-INSTRUMENT] Following case requires to "
+                        "handle (top-level handler) ...\n";
+        llvm::errs() << "-------------------------------------------------\n";
+        llvm::errs() << Loc.printToString(CGM.getContext().getSourceManager())
+                     << "\n";
+        llvm::errs() << "-------------------------------------------------\n";
         break;
       }
     }
   }
+  /*
+   * OS-CFI clang codegen modification to instrument reference monitor for
+   * C-style indirect call
+   * Ending of modification
+   */
 
   // Emit the actual call/invoke instruction.
   llvm::CallSite CS;
