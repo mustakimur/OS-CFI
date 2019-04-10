@@ -1470,9 +1470,6 @@ ItaniumCXXABI::buildStructorSignature(const CXXMethodDecl *MD, StructorType T,
       i++;
       // obj_alloc_index is int32
       ArgTys.insert(ArgTys.begin() + i, Context.IntTy);
-      i++;
-      // obj_alloc_context is int32
-      ArgTys.insert(ArgTys.begin() + i, Context.IntTy);
     }
   }
 
@@ -1535,19 +1532,7 @@ void ItaniumCXXABI::addImplicitStructorParams(CodeGenFunction &CGF,
                                     obj_T, ImplicitParamDecl::Other);
       // push the obj_alloc_param into the args list
       Params.insert(Params.begin() + i, objAllocDecl);
-      getStructorImpObjAllocParamDecl(CGF) = objAllocDecl;
-
-      i++;
-      // obj_alloc_index is int32
-      QualType obj_ctx = Context.IntTy;
-      // create implicit param
-      auto *objAllocCtxDecl =
-          ImplicitParamDecl::Create(Context, nullptr, MD->getLocation(),
-                                    &Context.Idents.get("obj_alloc_ctx_param"),
-                                    obj_ctx, ImplicitParamDecl::Other);
-      // push the obj_alloc_param into the args list
-      Params.insert(Params.begin() + i, objAllocCtxDecl);
-      getStructorImpObjAllocCtxParamDecl(CGF) = objAllocCtxDecl;
+      getObjOriginDecl(CGF) = objAllocDecl;
     }
   }
 }
@@ -1570,14 +1555,9 @@ void ItaniumCXXABI::EmitInstanceFunctionProlog(
   /// Initialize the 'obj_alloc' slot if needed.
   const CXXMethodDecl *MD = cast<CXXMethodDecl>(CGF.CurGD.getDecl());
   // [OSCFI] Force load here
-  if (isa<CXXConstructorDecl>(MD) && getStructorImpObjAllocParamDecl(CGF) &&
-      getStructorImpObjAllocCtxParamDecl(CGF)) {
-    getStructorImpObjAllocParamValue(CGF) = CGF.Builder.CreateLoad(
-        CGF.GetAddrOfLocalVar(getStructorImpObjAllocParamDecl(CGF)),
-        "obj_alloc");
-    getStructorImpObjAllocCtxParamValue(CGF) = CGF.Builder.CreateLoad(
-        CGF.GetAddrOfLocalVar(getStructorImpObjAllocCtxParamDecl(CGF)),
-        "obj_alloc_ctx");
+  if (isa<CXXConstructorDecl>(MD) && getObjOriginDecl(CGF)) {
+    getObjOriginValue(CGF) = CGF.Builder.CreateLoad(
+        CGF.GetAddrOfLocalVar(getObjOriginDecl(CGF)), "obj_alloc");
   }
 
   /// If this is a function that the ABI specifies returns 'this', initialize
@@ -1650,41 +1630,22 @@ CGCXXABI::AddedStructorArgs ItaniumCXXABI::addImplicitConstructorArgs(
     // cerr << "@ Current Function:\t" << CGF.CurFn->getName().str() << endl;
 
     llvm::Value *obj_index;
-    llvm::Value *obj_ctx;
     if (CGF.CurFuncDecl && isa<CXXConstructorDecl>(CGF.CurFuncDecl) &&
-        getStructorImpObjAllocParamDecl(CGF) &&
-        getStructorImpObjAllocCtxParamDecl(CGF)) {
-      if (!getStructorImpObjAllocParamDecl(CGF)) {
+        getObjOriginDecl(CGF)) {
+      if (!getObjOriginDecl(CGF)) {
         obj_index = CGF.Builder.CreateLoad(
-            CGF.GetAddrOfLocalVar(getStructorImpObjAllocParamDecl(CGF)),
-            "obj_alloc_param");
+            CGF.GetAddrOfLocalVar(getObjOriginDecl(CGF)), "obj_alloc_param");
       } else {
-        obj_index = getStructorImpObjAllocParamValue(CGF);
+        obj_index = getObjOriginValue(CGF);
       }
-
-      if (!getStructorImpObjAllocCtxParamDecl(CGF)) {
-        obj_ctx = CGF.Builder.CreateLoad(
-            CGF.GetAddrOfLocalVar(getStructorImpObjAllocCtxParamDecl(CGF)),
-            "obj_alloc_ctx_param");
-      } else {
-        obj_ctx = getStructorImpObjAllocCtxParamValue(CGF);
-      }
-
     } else {
       // otherwise, obj_alloc_index will be 2nd parameter after this pointer
       // cerr << "@ general constructor call" << endl;
       obj_index = llvm::ConstantInt::get(CGF.IntTy, obj_id, false);
-
-      llvm::Value *F = CGM.getIntrinsic(llvm::Intrinsic::returnaddress);
-      llvm::Value *obj_tmp = CGF.Builder.CreateCall(F, CGF.Builder.getInt32(0));
-      obj_ctx = CGF.Builder.CreatePtrToInt(obj_tmp, CGM.IntTy, "obj_ctx_alloc");
     }
     i++;
     Args.insert(Args.begin() + i,
                 CallArg(RValue::get(obj_index), getContext().IntTy));
-    i++;
-    Args.insert(Args.begin() + i,
-                CallArg(RValue::get(obj_ctx), getContext().IntTy));
   }
 
   if (i > 0)
@@ -1892,21 +1853,29 @@ CGCallee ItaniumCXXABI::getVirtualFunctionPointer(CodeGenFunction &CGF,
           llvm::MDNode::get(CGM.getLLVMContext(),
                             llvm::ArrayRef<llvm::Metadata *>()));
 
-    // [OSCFI] - make access here
-    llvm::Value *vPtr = CGF.Builder.CreatePtrToInt(VTable, CGM.Int64Ty, "vPtr");
-    llvm::Value *thisPtr =
+    /*
+     * OS-CFI clang codegen modification to instrument reference monitor for
+     * virtual function indirect call
+     * Beginning of modification
+     */
+    llvm::Value *vTableAddr = CGF.Builder.CreatePtrToInt(VTable, CGM.Int64Ty);
+    llvm::Value *thisPtrAddr =
         CGF.Builder.CreateBitCast(This.getPointer(), CGM.VoidPtrTy);
-    llvm::Value *calleePtr =
+    llvm::Value *calleePtrVal =
         CGF.Builder.CreateBitCast(VFuncLoad, CGM.VoidPtrTy);
-    llvm::FunctionType *rftype = llvm::FunctionType::get(
+
+    // prepare to call reference monitor
+    llvm::FunctionType *vreftype = llvm::FunctionType::get(
         CGM.VoidTy, {CGM.VoidPtrTy, CGM.Int64Ty, CGM.VoidPtrTy}, false);
     llvm::Constant *rf =
-        CGM.CreateRuntimeFunction(rftype, "vcall_reference_monitor");
+        CGM.CreateRuntimeFunction(vreftype, "vcall_reference_monitor");
 
-    llvm::CallInst *rfcall =
-        CGF.Builder.CreateCall(rf, {thisPtr, vPtr, calleePtr});
-
-    // [OSCFI] - make access here
+    CGF.Builder.CreateCall(rf, {thisPtrAddr, vTableAddr, calleePtrVal});
+    /*
+     * OS-CFI clang codegen modification to instrument reference monitor for
+     * virtual function indirect call
+     * Ending of modification
+     */
 
     VFunc = VFuncLoad;
   }

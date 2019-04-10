@@ -73,21 +73,13 @@ protected:
     return CGF.CXXStructorImplicitParamValue;
   }
 
-  /* [oCFI] Implicit Object Allocation Args Access Point [oCFI] */
-  ImplicitParamDecl *&getStructorImpObjAllocParamDecl(CodeGenFunction &CGF) {
-    return CGF.CXXStructorImpObjAllocParamDecl;
+  // get method to access object origin information
+  ImplicitParamDecl *&getObjOriginDecl(CodeGenFunction &CGF) {
+    return CGF.CXXObjOriginDecl;
   }
 
-  llvm::Value *&getStructorImpObjAllocParamValue(CodeGenFunction &CGF) {
-    return CGF.CXXStructorImpObjAllocParamValue;
-  }
-
-  ImplicitParamDecl *&getStructorImpObjAllocCtxParamDecl(CodeGenFunction &CGF) {
-    return CGF.CXXStructorImpObjAllocCtxParamDecl;
-  }
-
-  llvm::Value *&getStructorImpObjAllocCtxParamValue(CodeGenFunction &CGF) {
-    return CGF.CXXStructorImpObjAllocCtxParamValue;
+  llvm::Value *&getObjOriginValue(CodeGenFunction &CGF) {
+    return CGF.CXXObjOriginValue;
   }
 
   /// Loads the incoming C++ this pointer as it was passed by the caller.

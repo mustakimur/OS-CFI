@@ -1523,14 +1523,10 @@ private:
   ImplicitParamDecl *CXXStructorImplicitParamDecl = nullptr;
   llvm::Value *CXXStructorImplicitParamValue = nullptr;
 
-  /// CXXStructorImpObjAllocParamDecl - When generating code for a constructor
-  /// or destructor, this will hold the implicit argument (e.g.
-  /// obj_alloc_param).
-  ImplicitParamDecl *CXXStructorImpObjAllocParamDecl;
-  llvm::Value *CXXStructorImpObjAllocParamValue;
-
-  ImplicitParamDecl *CXXStructorImpObjAllocCtxParamDecl;
-  llvm::Value *CXXStructorImpObjAllocCtxParamValue;
+  /// CXXStructorImpObjAllocParamDecl - Following two are implicit param in
+  /// class constructor to carry the object origin id
+  ImplicitParamDecl *CXXObjOriginDecl;
+  llvm::Value *CXXObjOriginValue;
 
   /// OutermostConditional - Points to the outermost active
   /// conditional control.  This is used so that we know if a
@@ -1885,8 +1881,7 @@ public:
 
   void InitializeVTablePointers(const CXXRecordDecl *ClassDecl);
   // [oCFI] member function declaration [oCFI]
-  void storeToMetadataTable(Address VTableField,
-                            llvm::Value *VTableAddressPoint);
+  void entryObjOrigin(Address VTableField, llvm::Value *VTableAddressPoint);
 
   /// GetVTablePtr - Return the Value of the vtable pointer member pointed
   /// to by This.
@@ -2426,17 +2421,10 @@ public:
     return CXXStructorImplicitParamValue;
   }
 
-  /* [oCFI] Load Object Alloc Param Value [oCFI] */
-  llvm::Value *LoadObjAlloc() {
-    /*assert(CXXStructorImpObjAllocParamValue &&
-           "no obj_alloc value for this function");*/
-    return CXXStructorImpObjAllocParamValue;
-  }
-
-  llvm::Value *LoadObjAllocCtx() {
-    /*assert(CXXStructorImpObjAllocCtxParamValue &&
-           "no obj_alloc value for this function");*/
-    return CXXStructorImpObjAllocCtxParamValue;
+  // Load Object Alloc Param Value
+  llvm::Value *LoadObjOrigin() {
+    assert(CXXObjOriginValue && "no object origin value");
+    return CXXObjOriginValue;
   }
 
   /// GetAddressOfBaseOfCompleteClass - Convert the given pointer to a

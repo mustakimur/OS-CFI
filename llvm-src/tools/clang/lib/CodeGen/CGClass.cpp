@@ -2420,25 +2420,23 @@ void CodeGenFunction::InitializeVTablePointer(const VPtr &Vptr) {
       CGM.getCodeGenOpts().StrictVTablePointers)
     CGM.DecorateInstructionWithInvariantGroup(Store, Vptr.VTableClass);
 
-  storeToMetadataTable(thisPtr, VTableAddressPoint);
+  // update mpx table when vtable pointer pointer initialize
+  entryObjOrigin(thisPtr, VTableAddressPoint);
 }
 
-void CodeGenFunction::storeToMetadataTable(Address VTableField,
-                                           llvm::Value *VTableAddressPoint) {
-  /* [oCFI] store metadata to metadata table process [oCFI] */
-  if (LoadObjAlloc() && LoadObjAllocCtx()) {
-    llvm::Value *obj_alloc = LoadObjAlloc();
-    llvm::Value *obj_alloc_ctx = LoadObjAllocCtx();
-    llvm::Value *obj_alloc_64 =
-        Builder.CreateIntCast(obj_alloc, CGM.Int64Ty, false, "obj_alloc_64");
-    llvm::Value *obj_alloc_ctx_64 = Builder.CreateIntCast(
-        obj_alloc_ctx, CGM.Int64Ty, false, "obj_alloc_ctx_64");
+// create an entry in the MPX table for the newly created object
+void CodeGenFunction::entryObjOrigin(Address VTableField,
+                                     llvm::Value *VTableAddressPoint) {
+  if (LoadObjOrigin()) {
+    llvm::Value *objOrigin = LoadObjOrigin();
+    llvm::Value *objOrigin_64 =
+        Builder.CreateIntCast(objOrigin, CGM.Int64Ty, false);
 
     llvm::BasicBlock *storePath = createBasicBlock("store_to_metadata");
     llvm::BasicBlock *ignorePath = createBasicBlock("ignore_to_store");
 
     llvm::Value *cndCheck = llvm::ConstantInt::get(CGM.Int64Ty, 0, false);
-    llvm::Value *cndBr = Builder.CreateICmpEQ(obj_alloc_64, cndCheck);
+    llvm::Value *cndBr = Builder.CreateICmpEQ(objOrigin_64, cndCheck);
 
     Builder.CreateCondBr(cndBr, ignorePath, storePath);
 
@@ -2452,7 +2450,7 @@ void CodeGenFunction::storeToMetadataTable(Address VTableField,
         false);
     llvm::Constant *rf = CGM.CreateRuntimeFunction(rftype, "update_mpx_table");
     llvm::CallInst *rfcall =
-        Builder.CreateCall(rf, {thisPtr, vPtr, obj_alloc_64, obj_alloc_ctx_64});
+        Builder.CreateCall(rf, {thisPtr, vPtr, objOrigin_64, objOrigin_64});
     rfcall->setTailCallKind(llvm::CallInst::TailCallKind::TCK_NoTail);
 
     EmitBlock(ignorePath);

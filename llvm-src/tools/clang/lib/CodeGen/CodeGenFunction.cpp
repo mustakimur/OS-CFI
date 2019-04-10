@@ -67,18 +67,9 @@ CodeGenFunction::CodeGenFunction(CodeGenModule &cgm, bool suppressNewContext)
       Builder(cgm, cgm.getModule().getContext(), llvm::ConstantFolder(),
               CGBuilderInserterTy(this)),
       SanOpts(CGM.getLangOpts().Sanitize), DebugInfo(CGM.getModuleDebugInfo()),
-      PGO(cgm), CXXStructorImpObjAllocParamDecl(nullptr),
-      CXXStructorImpObjAllocParamValue(nullptr),
+      PGO(cgm), CXXObjOriginDecl(nullptr), CXXObjOriginValue(nullptr),
       ShouldEmitLifetimeMarkers(
           shouldEmitLifetimeMarkers(CGM.getCodeGenOpts(), CGM.getLangOpts())) {
-  ifstream candidatefile("loc_cfg.bin");
-  unsigned long candidate;
-  if (candidatefile.is_open()) {
-    while (candidatefile >> candidate) {
-      candidateLocations.push_back(candidate);
-    }
-    candidatefile.close();
-  }
   if (!suppressNewContext)
     CGM.getCXXABI().getMangleContext().startNewFunction();
 
@@ -167,11 +158,6 @@ llvm::StoreInst *CodeGenFunction::EmitStoreToMetadata(llvm::Value *Val,
     }
     ptr_id *= 100;
     ptr_id += (ptr_id_c++);
-
-    if (find(candidateLocations.begin(), candidateLocations.end(), ptr_id) !=
-        candidateLocations.end()) {
-      ptr_id = 0;
-    }
 
     // create the pointer-update id as constant
     llvm::Value *ptr_index = llvm::ConstantInt::get(IntTy, ptr_id, false);
