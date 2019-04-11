@@ -229,11 +229,6 @@ template <> struct DominatingValue<RValue> {
 class CodeGenFunction : public CodeGenTypeCache {
   CodeGenFunction(const CodeGenFunction &) = delete;
   void operator=(const CodeGenFunction &) = delete;
-
-  unsigned int ptr_id = 0;
-  unsigned int ptr_id_c = 0;
-  std::vector<unsigned long> candidateLocations;
-
   friend class CGCXXABI;
 
 public:

@@ -108,84 +108,87 @@ CodeGenFunction::~CodeGenFunction() {
     CGM.getOpenMPRuntime().functionFinished(*this);
 }
 
-/* [oCFI] wrapper method for all store instruction generation [oCFI] */
+// OS-CFI redirect every emit store instruction here
 llvm::StoreInst *CodeGenFunction::EmitStoreToMetadata(llvm::Value *Val,
                                                       Address Addr,
                                                       bool IsVolatile) {
+  // let's it do the regular operation first
   llvm::StoreInst *Store = Builder.CreateStore(Val, Addr, IsVolatile);
 
+  // if the store instruction operand is function pointer, then it should update
+  // the mpx table
   bool isStoreFunctionPointer = false;
-
   llvm::Value *extractValue = NULL;
 
-  // class member function as indirect call target (aka pointer-to-member)
   if (Addr.getElementType()->isStructTy() && Val->getType()->isStructTy()) {
-    // extract inner value from complex structure
+    // store to a pointer-to-member function pointer
     auto tmp = Builder.CreateExtractValue(Val, 0);
-
-    // only if the struct store is related to function pointer
     if (tmp->getType()->isIntegerTy()) {
       isStoreFunctionPointer = true;
       extractValue = tmp;
     }
   } else if (Addr.getElementType()->isPointerTy() &&
              Addr.getElementType()->getPointerElementType()->isFunctionTy()) {
-    // other store cases are simple
     isStoreFunctionPointer = true;
   }
 
   if (isStoreFunctionPointer) {
     // context for pointer-update site
-    llvm::Value *F = CGM.getIntrinsic(llvm::Intrinsic::returnaddress);
-    llvm::Value *ptr_tmp = Builder.CreateCall(F, Builder.getInt32(0));
-    llvm::Value *ptr_ctx =
-        Builder.CreatePtrToInt(ptr_tmp, CGM.IntTy, "ptr_ctx_update");
-    llvm::Value *ptr_update_ctx_64 =
-        Builder.CreateIntCast(ptr_ctx, CGM.Int64Ty, false, "ptr_update_ctx_64");
+    llvm::Value *rFn = CGM.getIntrinsic(llvm::Intrinsic::returnaddress);
+    llvm::Value *rfn_ctx = Builder.CreateCall(rFn, Builder.getInt32(0));
+    llvm::Value *ctx_val = Builder.CreatePtrToInt(rfn_ctx, CGM.IntTy);
+    llvm::Value *ctx_val_64 =
+        Builder.CreateIntCast(ctx_val, CGM.Int64Ty, false);
 
-    // generate a unique id for pointer-update site
-    string fnName = CurFn->getName().str();
-    string clfn = fnName;
-    if (clfn.length() != 0) {
-      for (unsigned int i = 0; i < clfn.length(); i++) {
-        char chr = clfn.at(i);
-        ptr_id = ((ptr_id << 5) - ptr_id) + chr;
-        ptr_id |= 0;
-      }
-      ptr_id %= 100000;
-    } else {
-      cerr << "[oCFI-LOG] origin id generation is facing an issue ..." << endl;
-    }
-    ptr_id *= 100;
-    ptr_id += (ptr_id_c++);
+    // OS-CFI Origin ID Creator (Begin)
+    string fn = CurFn->getName().str();
 
-    // create the pointer-update id as constant
-    llvm::Value *ptr_index = llvm::ConstantInt::get(IntTy, ptr_id, false);
-    llvm::Value *ptr_update_64 =
-        Builder.CreateIntCast(ptr_index, CGM.Int64Ty, false, "ptr_update_64");
+    std::string st;
+    llvm::raw_string_ostream rso(st);
+    Store->print(rso);
 
-    // cast the destination address (aka pointer memory address)
+    string key = fn + st;
+    std::hash<std::string> hash_fn;
+    unsigned long origin = hash_fn(key) % 1000000000;
+    // OS-CFI Origin ID Creator (End)
+
+    llvm::Value *p_origin = llvm::ConstantInt::get(IntTy, origin, false);
+    llvm::Value *p_origin_64 =
+        Builder.CreateIntCast(p_origin, CGM.Int64Ty, false);
+
+    // gather pointer address and pointer value
     llvm::Value *ptrAddr =
         Builder.CreateBitCast(Addr.getPointer(), CGM.VoidPtrTy);
-
-    // extract the target pointer target to
-    llvm::Value *ptrTarget;
+    llvm::Value *ptrValue;
     if (extractValue == NULL) {
-      ptrTarget = Builder.CreatePtrToInt(Val, CGM.Int64Ty, "ptr_target");
+      ptrValue = Builder.CreatePtrToInt(Val, CGM.Int64Ty);
     } else {
-      // case: class member function
-      ptrTarget =
-          Builder.CreatePtrToInt(extractValue, CGM.Int64Ty, "ptr_target");
+      ptrValue = Builder.CreatePtrToInt(extractValue, CGM.Int64Ty);
     }
 
-    // create the call to store to metadata table
-    llvm::FunctionType *rftype = llvm::FunctionType::get(
+    llvm::BasicBlock *activePath = createBasicBlock("update_mpx");
+    llvm::BasicBlock *inactivePath = createBasicBlock("ignore_update");
+
+    llvm::Value *idTest = llvm::ConstantInt::get(CGM.Int64Ty, 0, false);
+    llvm::Value *updateBr = Builder.CreateICmpEQ(p_origin_64, idTest);
+
+    // create conditional branch
+    // if origin id == 0, follow inactive path
+    // else active path
+    Builder.CreateCondBr(updateBr, inactivePath, activePath);
+
+    // active will update mpx table
+    EmitBlock(activePath);
+    llvm::FunctionType *uptype = llvm::FunctionType::get(
         CGM.VoidTy, {CGM.VoidPtrTy, CGM.Int64Ty, CGM.Int64Ty, CGM.Int64Ty},
         false);
-    llvm::Constant *rf = CGM.CreateRuntimeFunction(rftype, "update_mpx_table");
-    llvm::CallInst *rfcall = Builder.CreateCall(
-        rf, {ptrAddr, ptrTarget, ptr_update_64, ptr_update_ctx_64});
-    rfcall->setTailCallKind(llvm::CallInst::TailCallKind::TCK_NoTail);
+    llvm::Constant *up = CGM.CreateRuntimeFunction(uptype, "update_mpx_table");
+    llvm::CallInst *upcall =
+        Builder.CreateCall(up, {ptrAddr, ptrValue, p_origin_64, ctx_val_64});
+    upcall->setTailCallKind(llvm::CallInst::TailCallKind::TCK_NoTail);
+
+    // inactive path will avoid the update to mpx table
+    EmitBlock(inactivePath);
   }
 
   return Store;

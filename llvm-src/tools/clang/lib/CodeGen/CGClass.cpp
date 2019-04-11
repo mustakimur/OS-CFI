@@ -2425,35 +2425,40 @@ void CodeGenFunction::InitializeVTablePointer(const VPtr &Vptr) {
 }
 
 // create an entry in the MPX table for the newly created object
-void CodeGenFunction::entryObjOrigin(Address VTableField,
-                                     llvm::Value *VTableAddressPoint) {
+void CodeGenFunction::entryObjOrigin(Address thisPtr, llvm::Value *vTable) {
   if (LoadObjOrigin()) {
     llvm::Value *objOrigin = LoadObjOrigin();
     llvm::Value *objOrigin_64 =
         Builder.CreateIntCast(objOrigin, CGM.Int64Ty, false);
 
-    llvm::BasicBlock *storePath = createBasicBlock("store_to_metadata");
-    llvm::BasicBlock *ignorePath = createBasicBlock("ignore_to_store");
+    llvm::BasicBlock *activePath = createBasicBlock("update_mpx");
+    llvm::BasicBlock *inactivePath = createBasicBlock("ignore_update");
 
-    llvm::Value *cndCheck = llvm::ConstantInt::get(CGM.Int64Ty, 0, false);
-    llvm::Value *cndBr = Builder.CreateICmpEQ(objOrigin_64, cndCheck);
+    llvm::Value *idTest = llvm::ConstantInt::get(CGM.Int64Ty, 0, false);
+    llvm::Value *updateBr = Builder.CreateICmpEQ(objOrigin_64, idTest);
 
-    Builder.CreateCondBr(cndBr, ignorePath, storePath);
+    // create conditional branch
+    // if origin id == 0, follow inactive path
+    // else active path
+    Builder.CreateCondBr(updateBr, inactivePath, activePath);
 
-    EmitBlock(storePath);
-    llvm::Value *vPtr =
-        Builder.CreatePtrToInt(VTableAddressPoint, CGM.Int64Ty, "vPtr");
-    llvm::Value *thisPtr =
-        Builder.CreateBitCast(VTableField.getPointer(), CGM.VoidPtrTy);
-    llvm::FunctionType *rftype = llvm::FunctionType::get(
+    // active will update mpx table
+    EmitBlock(activePath);
+    llvm::Value *vTableAddr = Builder.CreatePtrToInt(vTable, CGM.Int64Ty);
+    llvm::Value *thisPtrAddr =
+        Builder.CreateBitCast(thisPtr.getPointer(), CGM.VoidPtrTy);
+
+    llvm::FunctionType *uptype = llvm::FunctionType::get(
         CGM.VoidTy, {CGM.VoidPtrTy, CGM.Int64Ty, CGM.Int64Ty, CGM.Int64Ty},
         false);
-    llvm::Constant *rf = CGM.CreateRuntimeFunction(rftype, "update_mpx_table");
-    llvm::CallInst *rfcall =
-        Builder.CreateCall(rf, {thisPtr, vPtr, objOrigin_64, objOrigin_64});
-    rfcall->setTailCallKind(llvm::CallInst::TailCallKind::TCK_NoTail);
+    llvm::Constant *up = CGM.CreateRuntimeFunction(uptype, "update_mpx_table");
 
-    EmitBlock(ignorePath);
+    llvm::CallInst *upcall = Builder.CreateCall(
+        up, {thisPtrAddr, vTableAddr, objOrigin_64, objOrigin_64});
+    upcall->setTailCallKind(llvm::CallInst::TailCallKind::TCK_NoTail);
+
+    // inactive path will avoid the update to mpx table
+    EmitBlock(inactivePath);
   }
 }
 

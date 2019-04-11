@@ -47,9 +47,6 @@ namespace {
 class ItaniumCXXABI : public CodeGen::CGCXXABI {
   /// VTables - All the vtables which have been defined.
   llvm::DenseMap<const CXXRecordDecl *, llvm::GlobalVariable *> VTables;
-  unsigned int obj_id = 0;
-  unsigned int obj_id_c = 0;
-  vector<unsigned long> candidateObjects;
 
 protected:
   bool UseARMMethodPtrABI;
@@ -1461,14 +1458,13 @@ ItaniumCXXABI::buildStructorSignature(const CXXMethodDecl *MD, StructorType T,
                   Context.getPointerType(Context.VoidPtrTy));
   }
 
-  // otherwise, obj_alloc_index will be 2nd parameter after this pointer
+  // OS-CFI builds the constructor signature with the implicit param
   if (isa<CXXConstructorDecl>(MD)) {
     auto *classDecl = MD->getParent();
-    // check if the constructor is not from standard library
+    // but only for user created class
     if (!(classDecl->isCXX11StandardLayout() || classDecl->isStandardLayout() ||
           classDecl->isInStdNamespace())) {
       i++;
-      // obj_alloc_index is int32
       ArgTys.insert(ArgTys.begin() + i, Context.IntTy);
     }
   }
@@ -1516,23 +1512,22 @@ void ItaniumCXXABI::addImplicitStructorParams(CodeGenFunction &CGF,
     Params.insert(Params.begin() + i, VTTDecl);
     getStructorImplicitParamDecl(CGF) = VTTDecl;
   }
-  // otherwise, obj_alloc_index will be 2nd parameter after this pointer
+  // OS-CFI adds implicit params into the class constructor
   if (isa<CXXConstructorDecl>(MD)) {
     auto *classDecl = MD->getParent();
-    // check if the constructor is not from standard library
+    // but only for user created class
     if (!(classDecl->isCXX11StandardLayout() || classDecl->isStandardLayout() ||
           classDecl->isInStdNamespace())) {
       i++;
-      // obj_alloc_index is int32
+
       QualType obj_T = Context.IntTy;
-      // create implicit param
-      auto *objAllocDecl =
+      auto *objOriginDecl =
           ImplicitParamDecl::Create(Context, nullptr, MD->getLocation(),
-                                    &Context.Idents.get("obj_alloc_param"),
+                                    &Context.Idents.get("obj_origin_param"),
                                     obj_T, ImplicitParamDecl::Other);
-      // push the obj_alloc_param into the args list
-      Params.insert(Params.begin() + i, objAllocDecl);
-      getObjOriginDecl(CGF) = objAllocDecl;
+
+      Params.insert(Params.begin() + i, objOriginDecl);
+      getObjOriginDecl(CGF) = objOriginDecl;
     }
   }
 }
@@ -1552,12 +1547,11 @@ void ItaniumCXXABI::EmitInstanceFunctionProlog(
         CGF.GetAddrOfLocalVar(getStructorImplicitParamDecl(CGF)), "vtt");
   }
 
-  /// Initialize the 'obj_alloc' slot if needed.
+  // Initialize the 'object origin' slot if needed
   const CXXMethodDecl *MD = cast<CXXMethodDecl>(CGF.CurGD.getDecl());
-  // [OSCFI] Force load here
   if (isa<CXXConstructorDecl>(MD) && getObjOriginDecl(CGF)) {
-    getObjOriginValue(CGF) = CGF.Builder.CreateLoad(
-        CGF.GetAddrOfLocalVar(getObjOriginDecl(CGF)), "obj_alloc");
+    getObjOriginValue(CGF) =
+        CGF.Builder.CreateLoad(CGF.GetAddrOfLocalVar(getObjOriginDecl(CGF)));
   }
 
   /// If this is a function that the ABI specifies returns 'this', initialize
@@ -1579,7 +1573,6 @@ CGCXXABI::AddedStructorArgs ItaniumCXXABI::addImplicitConstructorArgs(
 
   int i = 0;
   // Insert the implicit 'vtt' argument as the second argument.
-  // if VTT add, obj_alloc_index will be 3rd parameter
   if (NeedsVTTParameter(GlobalDecl(D, Type))) {
     i++;
     llvm::Value *VTT =
@@ -1589,63 +1582,43 @@ CGCXXABI::AddedStructorArgs ItaniumCXXABI::addImplicitConstructorArgs(
   }
 
   auto *classDecl = D->getParent();
-  // check if the constructor is not from standard library
-  // also not delegate or for virtual base
-  // cerr << "@ Delegating:\t" << Delegating << "\tForVirtualBase:\t"
-  //     << ForVirtualBase << endl;
+  // OS-CFI includes implicit args into the construction call
+  // if it is for a user created class
   if (!(classDecl->isCXX11StandardLayout() || classDecl->isStandardLayout() ||
         classDecl->isInStdNamespace()) &&
       !Delegating) {
-    // Object allocation id generator
-    string clName = classDecl->getNameAsString();
-    string fnName = CGF.CurFn->getName().str();
-    string clfn = clName + fnName;
+    // OS-CFI Origin ID Creator (Begin)
+    string cl = classDecl->getNameAsString();
+    string fn = CGF.CurFn->getName().str();
 
-    if (clfn.length() != 0) {
-      for (unsigned int i = 0; i < clfn.length(); i++) {
-        char chr = clfn.at(i);
-        obj_id = ((obj_id << 5) - obj_id) + chr;
-        obj_id |= 0;
-      }
-      obj_id %= 100000;
-    } else {
-      cerr << "[OCSCFI] Object allocation id generation face an issue ..."
-           << endl;
-    }
+    std::string cxfn;
+    llvm::raw_string_ostream rso(cxfn);
+    D->print(rso);
 
-    obj_id *= 100;
-    obj_id += (obj_id_c++);
+    string key = cl + cxfn + fn;
 
-    if (obj_id == 0) {
-      cerr << "[OCSCFI] object allocation id is 0" << endl;
-      cerr << clName << "\t" << fnName << endl;
-    }
+    std::hash<std::string> hash_fn;
+    unsigned long origin = hash_fn(key) % 1000000000;
+    // OS-CFI Origin ID Creator (End)
 
-    if (find(candidateObjects.begin(), candidateObjects.end(), obj_id) !=
-        candidateObjects.end()) {
-      obj_id = 0;
-    }
-    // Object allocation id generator
-
-    // cerr << "@ Current Function:\t" << CGF.CurFn->getName().str() << endl;
-
-    llvm::Value *obj_index;
+    llvm::Value *obj_value;
     if (CGF.CurFuncDecl && isa<CXXConstructorDecl>(CGF.CurFuncDecl) &&
         getObjOriginDecl(CGF)) {
+      // an existing origin is carry out to the inner constructor call
       if (!getObjOriginDecl(CGF)) {
-        obj_index = CGF.Builder.CreateLoad(
-            CGF.GetAddrOfLocalVar(getObjOriginDecl(CGF)), "obj_alloc_param");
+        obj_value = CGF.Builder.CreateLoad(
+            CGF.GetAddrOfLocalVar(getObjOriginDecl(CGF)), "obj_origin_param");
       } else {
-        obj_index = getObjOriginValue(CGF);
+        obj_value = getObjOriginValue(CGF);
       }
     } else {
-      // otherwise, obj_alloc_index will be 2nd parameter after this pointer
-      // cerr << "@ general constructor call" << endl;
-      obj_index = llvm::ConstantInt::get(CGF.IntTy, obj_id, false);
+      // a new origin is created for this constructor call
+      obj_value = llvm::ConstantInt::get(CGF.IntTy, origin, false);
     }
+
     i++;
     Args.insert(Args.begin() + i,
-                CallArg(RValue::get(obj_index), getContext().IntTy));
+                CallArg(RValue::get(obj_value), getContext().IntTy));
   }
 
   if (i > 0)
@@ -1870,7 +1843,9 @@ CGCallee ItaniumCXXABI::getVirtualFunctionPointer(CodeGenFunction &CGF,
     llvm::Constant *rf =
         CGM.CreateRuntimeFunction(vreftype, "vcall_reference_monitor");
 
-    CGF.Builder.CreateCall(rf, {thisPtrAddr, vTableAddr, calleePtrVal});
+    llvm::CallInst *rfcall =
+        CGF.Builder.CreateCall(rf, {thisPtrAddr, vTableAddr, calleePtrVal});
+    rfcall->setTailCallKind(llvm::CallInst::TailCallKind::TCK_NoTail);
     /*
      * OS-CFI clang codegen modification to instrument reference monitor for
      * virtual function indirect call

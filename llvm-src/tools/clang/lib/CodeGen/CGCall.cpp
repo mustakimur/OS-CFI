@@ -4285,7 +4285,9 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
         llvm::Constant *rf =
             CGM.CreateRuntimeFunction(preftype, "pcall_reference_monitor");
 
-        Builder.CreateCall(rf, {calleePtrAddr, calleePtrVal});
+        llvm::CallInst *rfcall =
+            Builder.CreateCall(rf, {calleePtrAddr, calleePtrVal});
+        rfcall->setTailCallKind(llvm::CallInst::TailCallKind::TCK_NoTail);
         break;
       } else if (isa<llvm::BitCastInst>(tempCalleePtr)) {
         // if current IR is for casting the calleePtr to another type
@@ -4350,7 +4352,9 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
         llvm::Constant *rf =
             CGM.CreateRuntimeFunction(preftype, "pcall_reference_monitor");
 
-        Builder.CreateCall(rf, {phiCalleePtrAddr, calleePtrVal});
+        llvm::CallInst *rfcall =
+            Builder.CreateCall(rf, {phiCalleePtrAddr, calleePtrVal});
+        rfcall->setTailCallKind(llvm::CallInst::TailCallKind::TCK_NoTail);
         break;
       } else if (isa<llvm::IntToPtrInst>(tempCalleePtr)) {
         auto *cast = dyn_cast<llvm::IntToPtrInst>(tempCalleePtr);
