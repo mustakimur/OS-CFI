@@ -2418,7 +2418,7 @@ public:
 
   // Load Object Alloc Param Value
   llvm::Value *LoadObjOrigin() {
-    assert(CXXObjOriginValue && "no object origin value");
+    //assert(CXXObjOriginValue && "no object origin value");
     return CXXObjOriginValue;
   }
 

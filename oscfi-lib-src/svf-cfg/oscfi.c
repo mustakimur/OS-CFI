@@ -12,11 +12,12 @@
 #include <stdlib.h>
 
 // will be used for statistical purpose
-unsigned long stats[10] = {0};
-char *stats_name[10] = {
-    "update_mpx: ",      "get_entry: ",      "oscfi_vcall: ",   "oscfi_pcall: ",
-    "oscfi_pcall_0: ",   "oscfi_pcall_1: ",  "oscfi_pcall_2: ", "oscfi_pcall_3",
-    "oscfi_pcall_fix: ", "oscfi_vcall_fix: "};
+unsigned long stats[12] = {0};
+char *stats_name[12] = {
+    "update_mpx: ",      "get_entry: ",     "oscfi_vcall: ",
+    "oscfi_pcall: ",     "oscfi_pcall_0: ", "oscfi_pcall_1: ",
+    "oscfi_pcall_2: ",   "oscfi_pcall_3",   "oscfi_pcall_fix: ",
+    "oscfi_vcall_fix: ", "ref_pcall",       "ref_vcall"};
 
 // the fixer for SUPA, a address-taken type check CFG
 // Format: ref_id, target
@@ -227,10 +228,14 @@ static_hash_insert(unsigned long ref_id, unsigned long target) {
 
 void __attribute__((__used__))
 pcall_reference_monitor(unsigned long ref_id, unsigned long ptr_addr,
-                        unsigned long ptr_val) {}
+                        unsigned long ptr_val) {
+  stats[10]++;
+}
 void __attribute__((__used__))
 vcall_reference_monitor(unsigned long ref_id, unsigned long vptr_addr,
-                        unsigned long vtable_addr, unsigned long vtarget) {}
+                        unsigned long vtable_addr, unsigned long vtarget) {
+  stats[11]++;
+}
 
 void __attribute__((__used__))
 oscfi_vcall_reference_monitor(unsigned long ref_id, unsigned long vptr_addr,
@@ -487,7 +492,7 @@ void __attribute__((__used__)) oscfi_end() {
   fprintf(
       stderr,
       "-----------------------------------------------------------------\n");
-  for (i = 0; i < 10; i++) {
+  for (i = 0; i < 12; i++) {
     fprintf(stderr, "%-20s%20lu\n", stats_name[i], stats[i]);
   }
   fprintf(
