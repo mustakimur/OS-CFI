@@ -59,18 +59,21 @@ DDAPass::~DDAPass() {
     delete _client;
 }
 
+// [OS-CFI] getHashID(): returns an unique id for an instruction
 unsigned long DDAPass::getHashID(const Instruction *inst) {
   std::hash<std::string> hash_fn;
   string str;
   raw_string_ostream rso(str);
   inst->print(rso);
   str += ("[" + inst->getParent()->getParent()->getName().str() + "]");
-  return (hash_fn(str) % 1000000000);
+  return (hash_fn(str) % HASH_ID_RANGE);
 }
 
 bool DDAPass::runOnModule(SVFModule module) {
   /// initialization for llvm alias analyzer
   // InitializeAliasAnalysis(this, SymbolTableInfo::getDataLayout(&module));
+
+  // [OS-CFI] list address-taken functions
   unsigned int nModule = module.getModuleNum();
   for (unsigned int im = 0; im < nModule; ++im) {
     Module *md = module.getModule(im);
@@ -457,7 +460,8 @@ void DDAPass::insertIndirectBranch() {
   }*/
 }
 
-// [OS-CFI] ToDo
+// [OS-CFI] isTypeMatch(): return true if params/args and return types matched
+// between an indirect call and a function signature
 bool DDAPass::isTypeMatch(const Instruction *sink, const Value *source) {
   int nFnArg = 0, nCallArg = 0;
   vector<const Type *> fnArgList, callArgList;
@@ -525,16 +529,19 @@ void DDAPass::fillEmptyPointsToSet(const Instruction *iCallInst) {
   }
 }
 
-// [OS-CFI] ToDo
+// [OS-CFI] computeCFG(): prepares the CFG listings from SUPA analysis
 void DDAPass::computeCFG() {
-  unsigned long sink, source, origin = -1, orgCtx = -1;
-
+  // get candidate queries
   const NodeSet &candidates = _client->getCandidateQueries();
   for (NodeSet::iterator cit = candidates.begin(), ceit = candidates.end();
        cit != ceit; ++cit) {
+    // for each queries, extract candidate SVFG node and points-to set
+    // information
     const SVFGNode *node = _pta->getSVFGForCandidateNode(*cit);
-    const PointsTo &pts = _pta->getPts(*cit);
+    const PointsTo &pts = _pta->getPts(*cit); // points-to set
 
+    // [OS-CFI] initially the sink is not the iCall but immediate load
+    // instruction
     llvm::Instruction *iCallInst = nullptr;
     if (isa<StmtSVFGNode>(node)) {
       const StmtSVFGNode *canStmt = dyn_cast<StmtSVFGNode>(node);
@@ -559,14 +566,104 @@ void DDAPass::computeCFG() {
       continue;
     }
 
-    /*insertLabelAfterCall(iCallInst);
+    // insertLabelAfterCall(iCallInst);
 
-    sink = *cit;
+    // list origin sensitive cfg
+    const OriginSensitiveTupleSet *opts =
+        _pta->getOriginSensitiveTupleSet(*cit);
+    if (opts) {
+      for (PointsTo::iterator pit = pts.begin(), peit = pts.end(); pit != peit;
+           ++pit) {
+        if (_pta->getValueFromNodeID(*pit) &&
+            (isa<GlobalValue>(_pta->getValueFromNodeID(*pit)) ||
+             isa<Function>(_pta->getValueFromNodeID(*pit)))) {
+          for (OriginSensitiveTupleSetIt oit = opts->begin(),
+                                         oeit = opts->end();
+               oit != oeit; ++oit) {
 
-    const srcNodeToOrgPointsToSetDDA *cpts = _pta->getCandidateSet(*cit);
-    callStackSetDDA *cfilbRes = _pta->getCandidateCFILB(*cit);
+            if (std::get<0>(*oit) == *pit) {
+              unsigned long target =
+                  std::get<0>(*oit); // origin sensitive tuple target
+              Instruction *inst = (Instruction *)(std::get<1>(*oit))->getInst();
+              Instruction *oInst = inst; // origin sensitive tuple store
+                                         // instruction aka. origin
+              unsigned long originID = -1;
 
-    for (PointsTo::iterator pit = pts.begin(), peit = pts.end(); pit != peit;
+              // replace origin store instruction to call to update mpx table
+              // instruction
+              while (1) {
+                // update mpx from inside object creation
+                oInst = (Instruction *)oInst->getNextNonDebugInstruction();
+                if (isa<CallInst>(oInst)) {
+                  CallInst *call = cast<CallInst>(oInst);
+                  if (call->getCalledFunction() &&
+                      call->getCalledFunction()->getName() ==
+                          "update_mpx_table") {
+                    if (isa<ConstantInt>(oInst->getOperand(2))) {
+                      ConstantInt *cint =
+                          dyn_cast<ConstantInt>(oInst->getOperand(2));
+                      originID = cint->getZExtValue();
+                    }
+                    break;
+                  }
+                }
+                if (oInst->isTerminator()) {
+                  oInst = nullptr;
+                  break;
+                }
+              }
+
+              if (!oInst) {
+                // update mpx from function pointer store
+                llvm::Instruction *bInst = inst->getParent()->getFirstNonPHI();
+                llvm::StoreInst *sinst = llvm::dyn_cast<llvm::StoreInst>(inst);
+
+                while (1) {
+                  if (bInst->getNextNonDebugInstruction() == inst &&
+                      llvm::isa<llvm::CallInst>(bInst)) {
+                    llvm::CallInst *call =
+                        llvm::dyn_cast<llvm::CallInst>(bInst);
+                    if (call->getNumArgOperands() >= 3 &&
+                        call->getArgOperand(0) == sinst->getValueOperand()) {
+                      oInst = call;
+                      if (isa<ConstantInt>(oInst->getOperand(1))) {
+                        ConstantInt *cint =
+                            dyn_cast<ConstantInt>(oInst->getOperand(1));
+                        originID = cint->getZExtValue();
+                      }
+                      break;
+                    }
+                  }
+                  if (bInst->isTerminator()) {
+                    break;
+                  }
+                  bInst = bInst->getNextNonDebugInstruction();
+                }
+              }
+
+              oCFG *oItem = (oCFG *)malloc(sizeof(oCFG));
+              oItem->iCallInst = iCallInst;
+              oItem->iCallID = getHashID(iCallInst);
+              oItem->iCallTarget = _pta->getValueFromNodeID(*pit);
+              oItem->iCallTargetID = *pit;
+              oItem->originID = originID;
+              if (std::get<2>(*oit)) {
+                oItem->originCTXInst = std::get<2>(*oit);
+                oItem->originCTXID = getHashID(std::get<2>(*oit));
+                insertLabelAfterCall(std::get<2>(*oit));
+              } else {
+                oItem->originCTXInst = nullptr;
+              }
+              oCFGList.push_back(oItem);
+            }
+          }
+        }
+      }
+    }
+
+    // list callsite sensitive cfg
+    CallStackSet *cfilbRes = _pta->getCSSensitiveSet(*cit);
+    /* for (PointsTo::iterator pit = pts.begin(), peit = pts.end(); pit != peit;
          ++pit) {
       if (_pta->isPointsTo(*pit)) {
         for (callStackSetDDA::iterator itt = cfilbRes->begin(),
@@ -604,94 +701,9 @@ void DDAPass::computeCFG() {
           }
         }
       }
-    }
+    } */
 
-    for (PointsTo::iterator pit = pts.begin(), peit = pts.end(); pit != peit;
-         ++pit) {
-      if (_pta->isPointsTo(*pit)) {
-        for (srcNodeToOrgPointsToSetDDAIterator oit = cpts->begin(),
-                                                oeit = cpts->end();
-             oit != oeit; ++oit) {
-
-          if (std::get<0>(*oit) == *pit) {
-            source = std::get<0>(*oit);
-            Instruction *inst = (Instruction *)(std::get<1>(*oit))->getInst();
-
-            if (!_pta->isCorrectPointsTo(*pit, inst))
-              continue;
-
-            llvm::Instruction *oinst = inst;
-
-            while (1) {
-              oinst = (Instruction *)oinst->getNextNonDebugInstruction();
-              if (isa<CallInst>(oinst)) {
-                CallInst *call = cast<CallInst>(oinst);
-                if (call->getCalledFunction() &&
-                    call->getCalledFunction()->getName() ==
-                        "store_mpx_metadata") {
-                  if (isa<ConstantInt>(oinst->getOperand(2))) {
-                    ConstantInt *cint =
-                        dyn_cast<ConstantInt>(oinst->getOperand(2));
-                    origin = cint->getZExtValue();
-                  }
-                  break;
-                }
-              }
-              if (oinst->isTerminator()) {
-                oinst = nullptr;
-                break;
-              }
-            }
-
-            if (!oinst) {
-              llvm::Instruction *binst = inst->getParent()->getFirstNonPHI();
-              llvm::StoreInst *sinst = llvm::dyn_cast<llvm::StoreInst>(inst);
-
-              while (1) {
-                if (binst->getNextNonDebugInstruction() == inst &&
-                    llvm::isa<llvm::CallInst>(binst)) {
-                  llvm::CallInst *call = llvm::dyn_cast<llvm::CallInst>(binst);
-                  if (call->getNumArgOperands() >= 3 &&
-                      call->getArgOperand(0) == sinst->getValueOperand()) {
-                    oinst = call;
-                    if (isa<ConstantInt>(oinst->getOperand(1))) {
-                      ConstantInt *cint =
-                          dyn_cast<ConstantInt>(oinst->getOperand(1));
-                      origin = cint->getZExtValue();
-                    }
-                    break;
-                  }
-                }
-                if (binst->isTerminator()) {
-                  break;
-                }
-                binst = binst->getNextNonDebugInstruction();
-              }
-            }
-
-            oCFI *oCFIItem = (oCFI *)malloc(sizeof(oCFI));
-
-            oCFIItem->sink = iCallInst;
-            oCFIItem->sinkID = getHashID(iCallInst);
-
-            oCFIItem->source = _pta->getTargetValue(*pit);
-            oCFIItem->sourceID = *pit;
-
-            oCFIItem->origin = origin;
-
-            if (std::get<2>(*oit)) {
-              oCFIItem->originCtx = std::get<2>(*oit);
-              oCFIItem->originCtxID = getHashID(std::get<2>(*oit));
-              insertLabelAfterCall(std::get<2>(*oit));
-            } else {
-              oCFIItem->originCtx = nullptr;
-            }
-            oCFG.push_back(oCFIItem);
-          }
-        }
-      }
-    }*/
-
+    // list CI-CFG using SUPA
     for (PointsTo::iterator pit = pts.begin(), peit = pts.end(); pit != peit;
          ++pit) {
       if (_pta->getValueFromNodeID(*pit) &&

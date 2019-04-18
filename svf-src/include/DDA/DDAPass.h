@@ -9,6 +9,8 @@
 
 #define DUMP_CFG_DEBUG 1
 
+#define HASH_ID_RANGE 10000000
+
 class SVFG;
 class SVFGEdge;
 
@@ -151,7 +153,8 @@ public:
   virtual inline llvm::StringRef getPassName() const { return "DDAPass"; }
 
 private:
-  unsigned long getHashID(const llvm::Instruction *);
+  unsigned long getHashID(const llvm::Instruction *); // [OS-CFI] return unique
+                                                      // id for an instruction
   void computeCFG();  // [OS-CFI] fill out CFG containers
   void dumpSUPACFG(); // [OS-CFI] print SUPA CI-CFG
   void dumpoCFG();    // [OS-CFI] print OS-CFG
@@ -162,7 +165,9 @@ private:
   bool isTypeMatch(const llvm::Instruction *,
                    const llvm::Value *); // [OS-CFI] test the type match between
                                          // sink and source
-  void fillEmptyPointsToSet(const llvm::Instruction *); // [OS-CFI] ToDo
+  void fillEmptyPointsToSet(
+      const llvm::Instruction *); // [OS-CFI] use address-taken type match cfg
+                                  // for empty points-to set
 
   /// Print queries' pts
   void printQueryPTS();

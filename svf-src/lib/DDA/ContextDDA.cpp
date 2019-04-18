@@ -45,10 +45,20 @@ void ContextDDA::initialize(SVFModule module) {
   flowDDA->initialize(module);
 }
 
-// [OS-CFI] ToDo
+// [OS-CFI] getSVFGForCandidateNode(): return SVFG node of candidate node id
 const SVFGNode *ContextDDA::getSVFGForCandidateNode(NodeID id) {
   return candidateSVFG[id];
 }
+
+// [OS-CFI] getOriginSensitiveTupleSet(): return OriginSensitiveTupleSet of a
+// candidate node id
+OriginSensitiveTupleSet *ContextDDA::getOriginSensitiveTupleSet(NodeID id) {
+  return mapSOrgSenTupSet[id];
+}
+
+// [OS-CFI] getCSSensitiveSet(): return CallStackSet of a
+// candidate node id
+CallStackSet *ContextDDA::getCSSensitiveSet(NodeID id) { return mapCSSen[id]; }
 
 /*!
  * Compute points-to set for a context-sensitive pointer

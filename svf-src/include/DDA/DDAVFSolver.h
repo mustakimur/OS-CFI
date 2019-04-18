@@ -33,8 +33,19 @@ public:
   typedef std::set<const SVFGEdge *> ConstSVFGEdgeSet;
   typedef SVFGEdge::SVFGEdgeSetTy SVFGEdgeSet;
   typedef std::map<const SVFGNode *, DPTItemSet> StoreToPMSetMap;
-  typedef std::map<NodeID, bool>
-      NodeBudgetStateMap; // [OS-CFI] define node to out of budget status
+  // [OS-CFI] general typedef
+  typedef std::set<const llvm::Instruction *> InstructionSet;
+  typedef std::set<const llvm::Instruction *>::iterator InstructionSetIt;
+  // [OS-CFI] Origin sensitive typedef
+  typedef std::map<NodeID, InstructionSet> TargetToOriginContextMap;
+  // [OS-CFI] set of origin sensitive tuples maps to sink
+  typedef std::map<NodeID, OriginSensitiveTupleSet *>
+      SinkToOriginSensitiveTupleSetMap;
+  typedef std::map<NodeID, OriginSensitiveTupleSet *>::iterator
+      SinkToOriginSensitiveTupleSetMapIt;
+  // [OS-CFI] set of call stack maps to sink
+  typedef std::map<NodeID, CallStackSet *> SinkToCallStackMap;
+  typedef std::map<NodeID, CallStackSet *>::iterator SinkToCallStackMapIt;
 
   /// Constructor
   DDAVFSolver()
@@ -686,7 +697,10 @@ protected:
                                  ///< stong updated there
   DDAStat *ddaStat;              ///< DDA stat
   SVFGBuilder svfgBuilder;       ///< SVFG Builder
-  NodeBudgetStateMap mapNodeBudget; // [OS-CFI] out of budget tracker
+  TargetToOriginContextMap mapTOrgCtx;               // [OS-CFI] ToDo
+  SinkToOriginSensitiveTupleSetMap mapSOrgSenTupSet; // [OS-CFI] ToDo
+  CallStackSet setCallStack;                         // [OS-CFI] ToDo
+  SinkToCallStackMap mapCSSen;                       // [OS-CFI] ToDo
 };
 
 #endif /* VALUEFLOWDDA_H_ */

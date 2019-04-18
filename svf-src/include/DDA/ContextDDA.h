@@ -31,7 +31,11 @@ public:
   virtual void initialize(SVFModule module);
 
   // [OS-CFI] return SVFG node of candidate node id
-  const SVFGNode *getSVFGForCandidateNode(NodeID id);
+  const SVFGNode *getSVFGForCandidateNode(NodeID);
+  // [OS-CFI] return OriginSensitiveTupleSet of a candidate node id
+  OriginSensitiveTupleSet *getOriginSensitiveTupleSet(NodeID);
+  // [OS-CFI] return CallStackSet of a candidate node id
+  CallStackSet *getCSSensitiveSet(NodeID);
 
   /// Finalize analysis
   virtual inline void finalize() { CondPTAImpl<ContextCond>::finalize(); }

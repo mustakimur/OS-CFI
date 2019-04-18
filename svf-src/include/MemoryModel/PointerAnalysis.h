@@ -49,8 +49,21 @@ class SVFModule;
 
 class PTAStat;
 
-// [OS-CFI] added SVFGNode access
+// [OS-CFI] added SVFGNode and StoreSVFGNode access
 class SVFGNode;
+class StoreSVFGNode;
+
+// [OS-CFI] origin sensitive tuple (target, origin, origin context)
+typedef std::tuple<NodeID, const StoreSVFGNode *, const llvm::Instruction *>
+    OriginSensitiveTuple;
+// [OS-CFI] set of origin sensitive tuples
+typedef std::set<OriginSensitiveTuple> OriginSensitiveTupleSet;
+typedef std::set<OriginSensitiveTuple>::iterator OriginSensitiveTupleSetIt;
+// [OS-CFI] set of callsite sensitive cfg
+typedef std::pair<NodeID, const llvm::Instruction *> CallSwitchPair;
+typedef std::stack<CallSwitchPair> CallSwitchPairStack;
+typedef std::pair<NodeID, CallSwitchPairStack> SinkCallSwitchStackPair;
+typedef std::set<SinkCallSwitchStackPair> CallStackSet;
 
 /*
  * Pointer Analysis Base Class
@@ -181,6 +194,13 @@ public:
 
   // [OS-CFI] it is originally implemented in derived classes
   virtual const SVFGNode *getSVFGForCandidateNode(NodeID id) { return nullptr; }
+
+  // [OS-CFI] it is originally implemented in derived classes
+  virtual OriginSensitiveTupleSet *getOriginSensitiveTupleSet(NodeID id) {
+    return nullptr;
+  }
+  // [OS-CFI] it is originally implemented in derived classes
+  virtual CallStackSet *getCSSensitiveSet(NodeID id) { return nullptr; }
 
   /// Interface exposed to users of our pointer analysis, given Location infos
   virtual llvm::AliasResult alias(const llvm::MemoryLocation &LocA,
