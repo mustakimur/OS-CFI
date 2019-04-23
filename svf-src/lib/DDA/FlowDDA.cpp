@@ -25,6 +25,8 @@ void FlowDDA::computeDDAPts(NodeID id) {
   resetQuery();
   LocDPItem::setMaxBudget(flowBudget);
 
+  setCurCandidate(id);
+
   PAGNode *node = getPAG()->getPAGNode(id);
   LocDPItem dpm = getDPIm(node->getId(), getDefSVFGNode(node));
 

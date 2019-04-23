@@ -807,7 +807,7 @@ protected:
         mapNodeStore[load->getId()] = mapNodeStore[loadSrc->getId()];
         if (DEBUG_SOLVER)
           llvm::outs() << "[OS-CFI] mapNodeStore[" << load->getId()
-                       << "] = mapNodeStore[" << loadSrc->getId() << "]";
+                       << "] = mapNodeStore[" << loadSrc->getId() << "]\n";
       }
     }
 
@@ -830,6 +830,22 @@ protected:
     DBOUT(DDDA, llvm::outs()
                     << "!##start new computation from storeDst svfgNode "
                     << store->getId() << " --> " << storeDst->getId() << "\n");
+
+    // [OS-CFI] ToDo
+    if (mapNodeStore.count(storeDst->getId()) > 0) {
+      mapNodeStore[store->getId()] = mapNodeStore[storeDst->getId()];
+      if (DEBUG_SOLVER)
+        llvm::outs() << "[OS-CFI] mapNodeStore[" << store->getId()
+                     << "] = mapNodeStore[" << storeDst->getId() << "]\n";
+    }
+
+    if (mapTOrgCtx.count(storeDst->getId()) > 0) {
+      mapTOrgCtx[store->getId()] = mapTOrgCtx[storeDst->getId()];
+      if (DEBUG_SOLVER)
+        llvm::outs() << "[oCFG] <OriginContext> mapTOrgCtx[" << store->getId()
+                     << "] = mapTOrgCtx[" << storeDst->getId() << "]\n";
+    }
+
     const SVFGEdge *edge =
         getSVFG()->getSVFGEdge(storeDst, store, SVFGEdge::IntraDirect);
     assert(edge && "Edge not found!!");
@@ -843,6 +859,35 @@ protected:
                     << "++backtrace to storeSrc from svfgNode "
                     << getLoadDpm(oldDpm).getLoc()->getId() << " to "
                     << store->getId() << " to " << storeSrc->getId() << "\n");
+
+    // [OS-CFI] ToDo
+    if (store && store->getInst()) {
+      if (mapNodeStore.count(store->getId()) > 0) {
+        mapNodeStore[storeSrc->getId()] = mapNodeStore[store->getId()];
+        if (DEBUG_SOLVER)
+          llvm::outs() << "[oCFG] mapNodeStore[" << storeSrc->getId()
+                       << "] = mapNodeStore[" << store->getId() << "]\n";
+      } else if (store && store->getInst() &&
+                 llvm::isa<llvm::Instruction>(store->getInst())) {
+        const llvm::Instruction *inst =
+            llvm::dyn_cast<llvm::Instruction>(store->getInst());
+        if (isInstStoreFnptr(inst)) {
+          mapNodeStore[storeSrc->getId()] = store;
+          if (DEBUG_SOLVER) {
+            llvm::outs() << "[oCFG] mapNodeStore[" << storeSrc->getId()
+                         << "] = " << *store << "\n";
+          }
+        }
+      }
+    }
+
+    if (mapTOrgCtx.count(store->getId()) > 0) {
+      mapTOrgCtx[storeSrc->getId()] = mapTOrgCtx[store->getId()];
+      if (DEBUG_SOLVER)
+        llvm::outs() << "[oCFG] mapTOrgCtx[" << storeSrc->getId()
+                     << "] = mapTOrgCtx[" << store->getId() << "]\n";
+    }
+
     const SVFGEdge *edge =
         getSVFG()->getSVFGEdge(storeSrc, store, SVFGEdge::IntraDirect);
     assert(edge && "Edge not found!!");
@@ -1039,8 +1084,8 @@ protected:
   inline bool isSVFGNodeInCycle(const SVFGNode *node) {
     return _svfgSCC->isInCycle(node->getId());
   }
-  /// Return TRUE if this edge is inside a SVFG SCC, i.e., src node and dst node
-  /// are in the same SCC on the SVFG.
+  /// Return TRUE if this edge is inside a SVFG SCC, i.e., src node and dst
+  /// node are in the same SCC on the SVFG.
   inline bool edgeInSVFGSCC(const SVFGEdge *edge) {
     return (getSVFGSCCRepNode(edge->getSrcID()) ==
             getSVFGSCCRepNode(edge->getDstID()));
@@ -1094,8 +1139,8 @@ protected:
     addLoadCVar(dpm, loadVar);
     addLoadDpm(dpm, loadDpm);
   }
-  /// Note that simply use "dpmToloadDpmMap[dpm]=loadDpm", requires DPIm have a
-  /// default constructor
+  /// Note that simply use "dpmToloadDpmMap[dpm]=loadDpm", requires DPIm have
+  /// a default constructor
   inline void addLoadDpm(const DPIm &dpm, const DPIm &loadDpm) {
     typename DPMToDPMMap::iterator it = dpmToloadDpmMap.find(dpm);
     if (it != dpmToloadDpmMap.end())

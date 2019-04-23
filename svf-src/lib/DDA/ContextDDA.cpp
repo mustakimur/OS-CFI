@@ -69,6 +69,8 @@ const CxtPtSet &ContextDDA::computeDDAPts(const CxtVar &var) {
   LocDPItem::setMaxBudget(cxtBudget);
 
   NodeID id = var.get_id();
+  setCurCandidate(id);
+
   PAGNode *node = getPAG()->getPAGNode(id);
   //[OS-CFI] map candidate node to their SVFG
   const SVFGNode *snode = getDefSVFGNode(node);
