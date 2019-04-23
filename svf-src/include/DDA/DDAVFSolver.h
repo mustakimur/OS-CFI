@@ -1,10 +1,8 @@
 /*
- * DDAVFSolver.h
- *
- *  Created on: Jul 3, 2014
- *      Author: Yulei Sui
+ * Origin-sensitive Control Flow Integrity
+ * Author: Mustakimur R. Khandaker (mrk15e@my.fsu.edu)
+ * Affliation: Florida State University
  */
-
 #ifndef VALUEFLOWDDA_H_
 #define VALUEFLOWDDA_H_
 
@@ -13,6 +11,9 @@
 #include "Util/SCC.h"
 #include "WPA/Andersen.h"
 #include <algorithm>
+
+#define DEBUG_SOLVER 0
+#define DEBUG_DETAILS 0
 
 /*!
  * Value-Flow Based Demand-Driven Points-to Analysis
@@ -36,6 +37,8 @@ public:
   // [OS-CFI] general typedef
   typedef std::set<const llvm::Instruction *> InstructionSet;
   typedef std::set<const llvm::Instruction *>::iterator InstructionSetIt;
+  typedef std::map<NodeID, const StoreSVFGNode *> NodeToStoreMap;
+  typedef std::map<NodeID, const StoreSVFGNode *>::iterator NodeToStoreMapIt;
   // [OS-CFI] Origin sensitive typedef
   typedef std::map<NodeID, InstructionSet> TargetToOriginContextMap;
   // [OS-CFI] set of origin sensitive tuples maps to sink
@@ -96,6 +99,134 @@ public:
     }
     llvm::outs() << "}\n";
   }
+
+  // [OS-CFI] getCurCandidate(): return the current candidate node id
+  virtual inline NodeID getCurCandidate() { return curCandidate; }
+
+  // [OS-CFI] setCurCandidate(): set current candidate node
+  virtual inline void setCurCandidate(NodeID id) {
+    curCandidate = id;
+    OriginSensitiveTupleSet *setOSen = new OriginSensitiveTupleSet();
+    CallStackSet *setCSen = new CallStackSet();
+    mapSOrgSenTupSet[curCandidate] = setOSen;
+    mapCSSen[curCandidate] = setCSen;
+  }
+
+  // [OS-CFI] dumpCallStack(): print the current call-stack
+  void dumpCallStack() {
+    if (DEBUG_SOLVER) {
+      llvm::outs() << "***************[OS-CFI] CALL STACK ("
+                   << setCallStack.size() << ") [OS-CFI]********************\n";
+      CallSwitchPairStack curStack(setCallStack);
+      while (!curStack.empty()) {
+        if (curStack.top().second)
+          llvm::outs() << curStack.top().first << " => "
+                       << *(curStack.top().second) << "\n";
+        curStack.pop();
+      }
+      llvm::outs()
+          << "**********************************************************"
+             "***************\n";
+    }
+  }
+
+  // [OS-CFI] clearCallStack(): clear the current call-stack
+  void clearCallStack() {
+    while (!setCallStack.empty()) {
+      setCallStack.pop();
+    }
+  }
+
+  // [OS-CFI] isOriginCtxInCallStack(): return true if checked origin context is
+  // in the current call-stack
+  bool isOriginCtxInCallStack(const llvm::Instruction *originCtx) {
+    const llvm::Instruction *topInst = nullptr;
+    CallSwitchPairStack curStack(setCallStack);
+    while (!curStack.empty()) {
+      topInst = curStack.top().second;
+      curStack.pop();
+    }
+    if (topInst == originCtx) {
+      return true;
+    }
+    return false;
+  }
+
+  // [OS-CFI] createCSEntry(): will create a new call-site sensitive CFG entry
+  // using the current call-stack but in reverse order
+  void createCSEntry(NodeID id) {
+    CallSwitchPairStack curStack(setCallStack);
+    CallSwitchPairStack tmp;
+    while (!curStack.empty()) {
+      tmp.push(curStack.top());
+      curStack.pop();
+    }
+    mapCSSen[getCurCandidate()]->insert(std::make_pair(id, tmp));
+  }
+
+  // [OS-CFI] handleOSensitivity(): it maps origin information for a candidate
+  void handleOSensitivity(const DPIm &dpm, const AddrSVFGNode *addr,
+                          bool flag) {
+    NodeID srcID = addr->getPAGSrcNodeID();
+
+    if (mapNodeStore.count(dpm.getLoc()->getId()) > 0) {
+      mapNodeStore[srcID] = mapNodeStore[dpm.getLoc()->getId()];
+      if (DEBUG_SOLVER) {
+        llvm::outs() << "[OS-CFI] mapNodeStore[" << srcID << "] = mapNodeStore["
+                     << dpm.getLoc()->getId() << "]\n";
+        if (DEBUG_DETAILS) {
+          llvm::outs() << "[OS-CFI] Store Instruction ";
+          llvm::outs() << *(mapNodeStore[dpm.getLoc()->getId()]->getInst())
+                       << "\n";
+        }
+      }
+
+      if (mapTOrgCtx.count(dpm.getLoc()->getId()) > 0) {
+        for (InstructionSetIt it = mapTOrgCtx[dpm.getLoc()->getId()].begin();
+             it != mapTOrgCtx[dpm.getLoc()->getId()].end(); it++) {
+          if (*it != nullptr) {
+            if (DEBUG_SOLVER) {
+              llvm::outs() << "[OS-CFI] mapSOrgSenTupSet[" << getCurCandidate()
+                           << "] <= <" << srcID << ", mapNodeStore["
+                           << dpm.getLoc()->getId() << "], " << **it << "]"
+                           << ">\n";
+            }
+            mapSOrgSenTupSet[getCurCandidate()]->insert(std::make_tuple(
+                srcID, mapNodeStore[dpm.getLoc()->getId()], *it));
+            if (flag && isOriginCtxInCallStack(*it)) {
+              createCSEntry(srcID);
+            }
+          } else {
+            mapSOrgSenTupSet[getCurCandidate()]->insert(std::make_tuple(
+                srcID, mapNodeStore[dpm.getLoc()->getId()], nullptr));
+            if (DEBUG_SOLVER) {
+              llvm::outs() << "[OS-CFI] mapSOrgSenTupSet[" << getCurCandidate()
+                           << "] <= <" << srcID << ", "
+                           << "mapNodeStore[" << dpm.getLoc()->getId() << "], "
+                           << "nullptr]"
+                           << ">\n";
+            }
+          }
+        }
+      } else {
+        mapSOrgSenTupSet[getCurCandidate()]->insert(std::make_tuple(
+            srcID, mapNodeStore[dpm.getLoc()->getId()], nullptr));
+        if (DEBUG_SOLVER) {
+          llvm::outs() << "[OS-CFI] mapSOrgSenTupSet[" << getCurCandidate()
+                       << "] <= <" << srcID << ", mapNodeStore["
+                       << dpm.getLoc()->getId() << "], "
+                       << "nullptr]"
+                       << ">\n";
+        }
+      }
+    } else {
+      if (DEBUG_SOLVER) {
+        llvm::outs() << "[OS-CFI] uninitialized address-taken at "
+                     << dpm.getLoc()->getId() << "\n";
+      }
+    }
+  }
+
   /// Compute points-to
   virtual const CPtSet &findPT(const DPIm &dpm) {
 
@@ -105,6 +236,11 @@ public:
       DBOUT(DDDA, dpm.dump());
       DBOUT(DDDA, llvm::outs() << "\t return points-to: ");
       DBOUT(DDDA, dumpCPtSet(cpts));
+      // [OS-CFI] ToDo
+      const SVFGNode *node = dpm.getLoc();
+      if (llvm::isa<AddrSVFGNode>(node)) {
+        handleOSensitivity(dpm, llvm::cast<AddrSVFGNode>(node), true);
+      }
       return cpts;
     }
 
@@ -125,6 +261,254 @@ public:
   }
 
 protected:
+  // [OS-CFI] matchCallInstArgmunet(): return true if call instruction has the
+  // matched argument
+  bool matchCallInstArgmunet(llvm::Instruction *call, const llvm::Value *arg,
+                             unsigned int argNo) {
+    llvm::CallInst *callInst = nullptr;
+    llvm::InvokeInst *invokeInst = nullptr;
+    if (llvm::isa<llvm::CallInst>(call)) {
+      callInst = llvm::dyn_cast<llvm::CallInst>(call);
+      if (callInst->getNumArgOperands() > argNo &&
+          callInst->getArgOperand(argNo) == arg) {
+        return true;
+      }
+    } else if (llvm::isa<llvm::InvokeInst>(call)) {
+      invokeInst = llvm::dyn_cast<llvm::InvokeInst>(call);
+      if (invokeInst->getNumArgOperands() > argNo &&
+          invokeInst->getArgOperand(argNo) == arg) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // [OS-CFI] getInstructionForTargetFunction(): return instruction if source
+  // statement target to a function
+  llvm::Instruction *
+  getInstructionForTargetFunction(const llvm::Instruction *srcStmt,
+                                  const llvm::Function *target,
+                                  const llvm::Value *addr, unsigned int argNo) {
+    llvm::CallInst *callInst = nullptr;
+    llvm::InvokeInst *invokeInst = nullptr;
+    llvm::Instruction *inst = (llvm::Instruction *)srcStmt;
+    if (llvm::isa<llvm::CallInst>(inst)) {
+      callInst = llvm::dyn_cast<llvm::CallInst>(inst);
+      if ((callInst->getCalledFunction() == target ||
+           callInst->getCalledFunction() == NULL) &&
+          matchCallInstArgmunet(callInst, addr, argNo)) {
+        return callInst;
+      }
+    } else if (llvm::isa<llvm::InvokeInst>(inst)) {
+      invokeInst = llvm::dyn_cast<llvm::InvokeInst>(inst);
+      if ((invokeInst->getCalledFunction() == target ||
+           invokeInst->getCalledFunction() == NULL) &&
+          matchCallInstArgmunet(invokeInst, addr, argNo)) {
+        return invokeInst;
+      }
+    }
+    return nullptr;
+  }
+
+  // [OS-CFI] getMatchedCallInstruction(): return instruction if search found
+  // the expected call instruction
+  llvm::Instruction *getMatchedCallInstruction(const llvm::Instruction *srcStmt,
+                                               const llvm::Function *target,
+                                               unsigned int argNo) {
+    llvm::CallInst *callInst = nullptr;
+    llvm::InvokeInst *invokeInst = nullptr;
+    llvm::Instruction *inst = (llvm::Instruction *)srcStmt;
+    while (1) {
+      if (llvm::isa<llvm::CallInst>(inst)) {
+        callInst = llvm::dyn_cast<llvm::CallInst>(inst);
+        if ((callInst->getCalledFunction() == target ||
+             callInst->getCalledFunction() == NULL) &&
+            matchCallInstArgmunet(callInst, srcStmt, argNo)) {
+          return callInst;
+        }
+      } else if (llvm::isa<llvm::InvokeInst>(inst)) {
+        invokeInst = llvm::dyn_cast<llvm::InvokeInst>(inst);
+        if ((invokeInst->getCalledFunction() == target ||
+             invokeInst->getCalledFunction() == NULL) &&
+            matchCallInstArgmunet(invokeInst, srcStmt, argNo)) {
+          return invokeInst;
+        }
+      }
+      if (inst->isTerminator()) {
+        return nullptr;
+      }
+      inst = inst->getNextNonDebugInstruction();
+    }
+    return nullptr;
+  }
+
+  // [OS-CFI] isInstStoreFnptr(): return true if the store instruction stores to
+  // a function pointer
+  bool isInstStoreFnptr(const llvm::Instruction *initInst) {
+    llvm::Instruction *inst = (llvm::Instruction *)initInst;
+    llvm::Instruction *ninst =
+        (llvm::Instruction *)inst->getNextNonDebugInstruction();
+    if (llvm::isa<llvm::CallInst>(ninst)) {
+      llvm::CallInst *call = llvm::dyn_cast<llvm::CallInst>(ninst);
+      if (call->getCalledFunction() &&
+          call->getCalledFunction()->getName() == "llvm.returnaddress")
+        return true;
+    }
+
+    llvm::Instruction *binst = inst->getParent()->getFirstNonPHI();
+    llvm::StoreInst *sinst = llvm::dyn_cast<llvm::StoreInst>(inst);
+
+    while (1) {
+      if (binst->getNextNonDebugInstruction() == inst &&
+          llvm::isa<llvm::CallInst>(binst)) {
+        llvm::CallInst *call = llvm::dyn_cast<llvm::CallInst>(binst);
+        if (call->getNumArgOperands() >= 3 &&
+            call->getArgOperand(0) == sinst->getValueOperand()) {
+          return true;
+        }
+      }
+      if (binst->isTerminator()) {
+        break;
+      }
+      binst = binst->getNextNonDebugInstruction();
+    }
+    return false;
+  }
+
+  // [OS-CFI] handleOSenEdge(): test SVFGEdges direct or indiret,
+  // it will check if any edge is part of callsite context if so, it will either
+  // add the new callsite or keep it mapping with previous nodes it also keep
+  // the consistent mapping for recent store instruction
+  void handleOSenEdge(const DPIm &oldDpm, const SVFGEdge *edge) {
+    const SVFGNode *srcNode = edge->getSrcNode();
+    const SVFGNode *dstNode = edge->getDstNode();
+    const StmtSVFGNode *srcStmt = nullptr;
+    const StmtSVFGNode *dstStmt = nullptr;
+    const llvm::Function *srcFunc = nullptr;
+    const llvm::Function *dstFunc = nullptr;
+
+    if (srcNode && llvm::isa<StmtSVFGNode>(srcNode)) {
+      srcStmt = llvm::dyn_cast<StmtSVFGNode>(srcNode);
+      if (srcStmt && srcStmt->getInst())
+        srcFunc = srcStmt->getInst()->getParent()->getParent();
+    }
+    if (dstNode && llvm::isa<StmtSVFGNode>(dstNode)) {
+      dstStmt = llvm::dyn_cast<StmtSVFGNode>(dstNode);
+      if (dstStmt && dstStmt->getInst())
+        dstFunc = dstStmt->getInst()->getParent()->getParent();
+    }
+
+    if (DEBUG_DETAILS && srcStmt && srcStmt->getInst() && dstStmt &&
+        dstStmt->getInst()) {
+      llvm::outs() << "[OS-CFI] Source Statement{" << srcNode->getId()
+                   << "}: " << *srcStmt->getInst() << "["
+                   << srcFunc->getName().str() << "]\n";
+      llvm::outs() << "[OS-CFI] Destination Statement{" << dstNode->getId()
+                   << "}: " << *dstStmt->getInst() << "["
+                   << dstFunc->getName().str() << "]\n";
+    }
+
+    if (llvm::isa<IndirectSVFGEdge>(edge) &&
+        ((setCallStack.size() > 0 && setCallStack.top().second != nullptr) ||
+         setCallStack.size() == 0)) {
+      if (srcFunc != dstFunc) {
+        setCallStack.push(std::make_pair(oldDpm.getLoc()->getId(), nullptr));
+      } else if (!dstStmt) {
+        setCallStack.push(std::make_pair(oldDpm.getLoc()->getId(), nullptr));
+      }
+      dumpCallStack();
+    }
+
+    if (mapNodeStore.count(edge->getDstID()) > 0) {
+      mapNodeStore[edge->getSrcID()] = mapNodeStore[edge->getDstID()];
+      if (DEBUG_SOLVER)
+        llvm::outs() << "[OS-CFI] mapNodeStore[" << edge->getSrcID()
+                     << "] = mapNodeStore[" << edge->getDstID() << "]";
+    }
+
+    InstructionSet orgCtxSet;
+
+    if (const InterPHISVFGNode *interphiparam =
+            llvm::dyn_cast<InterPHISVFGNode>(dstNode)) {
+      if (interphiparam->isFormalParmPHI()) {
+        unsigned int argNo = -1;
+        if (llvm::isa<llvm::Argument>(interphiparam->getRes()->getValue())) {
+          const llvm::Argument *arg = llvm::dyn_cast<llvm::Argument>(
+              interphiparam->getRes()->getValue());
+          argNo = arg->getArgNo();
+        }
+
+        const llvm::Instruction *srcStmt = nullptr;
+        const llvm::Value *argAddr = nullptr;
+        PAGNode *copyPag = nullptr;
+
+        if (const AddrSVFGNode *addr = llvm::dyn_cast<AddrSVFGNode>(srcNode)) {
+          copyPag = (_pag->getPAGNode(oldDpm.getCurNodeID()));
+          argAddr = (_pag->getPAGNode(addr->getPAGSrcNodeID()))->getValue();
+        } else if (const StmtSVFGNode *stmt =
+                       llvm::dyn_cast<StmtSVFGNode>(srcNode)) {
+          srcStmt = stmt->getInst();
+        }
+
+        if (srcStmt) {
+          llvm::Instruction *call = getMatchedCallInstruction(
+              srcStmt, interphiparam->getFun(), argNo);
+          if (call) {
+            orgCtxSet.insert(call);
+            CallSwitchPair tmp = std::make_pair(oldDpm.getLoc()->getId(), call);
+            if (setCallStack.size() == 0 ||
+                (setCallStack.size() > 0 && setCallStack.top() != tmp)) {
+              setCallStack.push(tmp);
+              dumpCallStack();
+            }
+          }
+        } else if (copyPag) {
+          if (copyPag->hasIncomingEdges(PAGEdge::PEDGEK::Call)) {
+            for (PAGEdge::PAGEdgeSetTy::iterator
+                     inIt =
+                         copyPag->getIncomingEdgesBegin(PAGEdge::PEDGEK::Call),
+                     inEit =
+                         copyPag->getIncomingEdgesEnd(PAGEdge::PEDGEK::Call);
+                 inIt != inEit; ++inIt) {
+              PAGEdge *edge = *inIt;
+              llvm::Instruction *call = getInstructionForTargetFunction(
+                  edge->getInst(), interphiparam->getFun(), argAddr, argNo);
+              if (call) {
+                orgCtxSet.insert(call);
+
+                CallSwitchPair tmp =
+                    std::make_pair(oldDpm.getLoc()->getId(), call);
+                if (setCallStack.size() == 0 ||
+                    (setCallStack.size() > 0 && setCallStack.top() != tmp)) {
+                  setCallStack.push(tmp);
+                  dumpCallStack();
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if (mapTOrgCtx.count(edge->getDstID()) > 0) {
+      mapTOrgCtx[edge->getSrcID()] = mapTOrgCtx[edge->getDstID()];
+      if (DEBUG_SOLVER) {
+        llvm::outs() << "[OS-CFI] mapTOrgCtx[" << edge->getSrcID()
+                     << "] = mapTOrgCtx[" << edge->getDstID() << "]\n";
+      }
+    } else {
+      if (!orgCtxSet.empty()) {
+        for (InstructionSetIt orgCtxSetIt = orgCtxSet.begin();
+             orgCtxSetIt != orgCtxSet.end(); orgCtxSetIt++) {
+          mapTOrgCtx[edge->getSrcID()].insert(*orgCtxSetIt);
+          if (DEBUG_SOLVER)
+            llvm::outs() << "[OS-CFI] mapTOrgCtx[" << edge->getSrcID()
+                         << "] = " << **orgCtxSetIt << "\n";
+        }
+      }
+    }
+  }
+
   /// Handle single statement
   virtual void handleSingleStatement(const DPIm &dpm, CPtSet &pts) {
     /// resolve function pointer first at indirect callsite
@@ -132,6 +516,10 @@ protected:
 
     const SVFGNode *node = dpm.getLoc();
     if (llvm::isa<AddrSVFGNode>(node)) {
+      if (DEBUG_DETAILS) {
+        llvm::outs() << "[OS-CFI] [" << getCurCandidate() << "] AddrSVFGNode: "
+                     << *(_pag->getPAGNode(dpm.getCurNodeID())) << "\n";
+      }
       handleAddr(pts, dpm, llvm::cast<AddrSVFGNode>(node));
     } else if (llvm::isa<CopySVFGNode>(node) || llvm::isa<PHISVFGNode>(node) ||
                llvm::isa<ActualParmSVFGNode>(node) ||
@@ -139,12 +527,24 @@ protected:
                llvm::isa<ActualRetSVFGNode>(node) ||
                llvm::isa<FormalRetSVFGNode>(node) ||
                llvm::isa<NullPtrSVFGNode>(node)) {
+      if (DEBUG_DETAILS) {
+        llvm::outs() << "[OS-CFI] [" << getCurCandidate() << "] CopySVFGNode: "
+                     << *(_pag->getPAGNode(dpm.getCurNodeID())) << "\n";
+      }
       backtraceAlongDirectVF(pts, dpm);
     } else if (llvm::isa<GepSVFGNode>(node)) {
+      if (DEBUG_DETAILS) {
+        llvm::outs() << "[OS-CFI] [" << getCurCandidate() << "] GEPSVFGNode: "
+                     << *(_pag->getPAGNode(dpm.getCurNodeID())) << "\n";
+      }
       CPtSet gepPts;
       backtraceAlongDirectVF(gepPts, dpm);
       unionDDAPts(pts, processGepPts(llvm::cast<GepSVFGNode>(node), gepPts));
     } else if (llvm::isa<LoadSVFGNode>(node)) {
+      if (DEBUG_DETAILS) {
+        llvm::outs() << "[OS-CFI] [" << getCurCandidate() << "] LoadSVFGNode: "
+                     << *(_pag->getPAGNode(dpm.getCurNodeID())) << "\n";
+      }
       CPtSet loadpts;
       startNewPTCompFromLoadSrc(loadpts, dpm);
       for (typename CPtSet::iterator it = loadpts.begin(), eit = loadpts.end();
@@ -152,6 +552,10 @@ protected:
         backtraceAlongIndirectVF(pts, getDPImWithOldCond(dpm, *it, node));
       }
     } else if (llvm::isa<StoreSVFGNode>(node)) {
+      if (DEBUG_DETAILS) {
+        llvm::outs() << "[OS-CFI] [" << getCurCandidate() << "] StoreSVFGNode: "
+                     << *(_pag->getPAGNode(dpm.getCurNodeID())) << "\n";
+      }
       if (isMustAlias(getLoadDpm(dpm), dpm)) {
         DBOUT(DDDA, llvm::outs() << "+++must alias for load and store:");
         DBOUT(DDDA, getLoadDpm(dpm).dump());
@@ -182,6 +586,40 @@ protected:
         }
       }
     } else if (llvm::isa<MRSVFGNode>(node)) {
+      // [OS-CFI] ToDo
+      NodeID curNode = _pag->getPAGNode(dpm.getCurNodeID())->getId();
+      if (DEBUG_DETAILS) {
+        llvm::outs() << "[OS-CFI] [" << getCurCandidate() << "] MRSVFGNode: "
+                     << *(_pag->getPAGNode(dpm.getCurNodeID())) << "\n";
+      }
+      NodeID obj = dpm.getCurNodeID();
+      if (!(_pag->isConstantObj(obj) || _pag->isNonPointerObj(obj))) {
+        const SVFGEdgeSet edgeSet(node->getInEdges());
+        for (SVFGNode::const_iterator it = edgeSet.begin(), eit = edgeSet.end();
+             it != eit; ++it) {
+          if (const IndirectSVFGEdge *indirEdge =
+                  llvm::dyn_cast<IndirectSVFGEdge>(*it)) {
+            PointsTo &guard = const_cast<PointsTo &>(indirEdge->getPointsTo());
+            if (guard.test(obj)) {
+              const SVFGNode *srcNode = indirEdge->getSrcNode();
+              if (mapNodeStore.count(curNode) > 0) {
+                mapNodeStore[srcNode->getId()] = mapNodeStore[curNode];
+                if (DEBUG_SOLVER) {
+                  llvm::outs() << "[OS-CFI] mapNodeStore[" << srcNode->getId()
+                               << "] = mapNodeStore[" << curNode << "]\n";
+                }
+                if (mapTOrgCtx.count(curNode) > 0) {
+                  mapTOrgCtx[srcNode->getId()] = mapTOrgCtx[curNode];
+                  if (DEBUG_SOLVER) {
+                    llvm::outs() << "[OS-CFI] mapTOrgCtx[" << srcNode->getId()
+                                 << "] = mapTOrgCtx[" << curNode << "]\n";
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
       backtraceAlongIndirectVF(pts, dpm);
     } else
       assert(false && "unexpected kind of SVFG nodes");
@@ -265,6 +703,15 @@ protected:
     loadToPTCVarMap.clear();
     outOfBudgetQuery = false;
     ddaStat->_NumOfStep = 0;
+
+    // [OS-CFI] reset data before every query
+    mapNodeStore.clear();
+    mapTOrgCtx.clear();
+    // storeToDPMs.clear();
+    // dpmToTLCPtSetMap.clear();
+    // dpmToADCPtSetMap.clear();
+    // backwardVisited.clear();
+    clearCallStack();
   }
   /// Reset visited map if the current query is out-of-budget
   inline void OOBResetVisited() {
@@ -279,10 +726,12 @@ protected:
           clearbkVisited(*dit);
     }
   }
+
   /// GetDefinition SVFG
   inline const SVFGNode *getDefSVFGNode(const PAGNode *pagNode) const {
     return getSVFG()->getDefSVFGNode(pagNode);
   }
+
   /// Backward traverse along indirect value flows
   void backtraceAlongIndirectVF(CPtSet &pts, const DPIm &oldDpm) {
     const SVFGNode *node = oldDpm.getLoc();
@@ -299,11 +748,24 @@ protected:
           DBOUT(DDDA, llvm::outs() << "\t\t==backtrace indirectVF svfgNode "
                                    << indirEdge->getDstID() << " --> "
                                    << indirEdge->getSrcID() << "\n");
+
+          // [OS-CFI] ToDo
+          const SVFGNode *srcNode = indirEdge->getSrcNode();
+          handleOSenEdge(oldDpm, indirEdge);
+
           backwardPropDpm(pts, oldDpm.getCurNodeID(), oldDpm, indirEdge);
+
+          if (setCallStack.size() > 0 &&
+              setCallStack.top().first == oldDpm.getLoc()->getId()) {
+            CallSwitchPair tmp = setCallStack.top();
+            setCallStack.pop();
+            dumpCallStack();
+          }
         }
       }
     }
   }
+
   /// Backward traverse along direct value flows
   void backtraceAlongDirectVF(CPtSet &pts, const DPIm &oldDpm) {
     const SVFGNode *node = oldDpm.getLoc();
@@ -315,8 +777,17 @@ protected:
                                  << dirEdge->getDstID() << " --> "
                                  << dirEdge->getSrcID() << "\n");
         const SVFGNode *srcNode = dirEdge->getSrcNode();
+        // [OS-CFI] ToDo
+        handleOSenEdge(oldDpm, dirEdge);
+
         backwardPropDpm(pts, getSVFG()->getLHSTopLevPtr(srcNode)->getId(),
                         oldDpm, dirEdge);
+        if (setCallStack.size() > 0 &&
+            setCallStack.top().first == oldDpm.getLoc()->getId()) {
+          CallSwitchPair tmp = setCallStack.top();
+          setCallStack.pop();
+          dumpCallStack();
+        }
       }
     }
   }
@@ -329,11 +800,30 @@ protected:
     DBOUT(DDDA, llvm::outs()
                     << "!##start new computation from loadSrc svfgNode "
                     << load->getId() << " --> " << loadSrc->getId() << "\n");
+
+    // [OS-CFI] ToDo
+    if (load && load->getInst()) {
+      if (mapNodeStore.count(loadSrc->getId()) > 0) {
+        mapNodeStore[load->getId()] = mapNodeStore[loadSrc->getId()];
+        if (DEBUG_SOLVER)
+          llvm::outs() << "[OS-CFI] mapNodeStore[" << load->getId()
+                       << "] = mapNodeStore[" << loadSrc->getId() << "]";
+      }
+    }
+
+    if (mapTOrgCtx.count(loadSrc->getId()) > 0) {
+      mapTOrgCtx[load->getId()] = mapTOrgCtx[loadSrc->getId()];
+      if (DEBUG_SOLVER)
+        llvm::outs() << "[oCFG] mapTOrgCtx[" << load->getId()
+                     << "] = mapTOrgCtx[" << loadSrc->getId() << "]\n";
+    }
+
     const SVFGEdge *edge =
         getSVFG()->getSVFGEdge(loadSrc, load, SVFGEdge::IntraDirect);
     assert(edge && "Edge not found!!");
     backwardPropDpm(pts, load->getPAGSrcNodeID(), oldDpm, edge);
   }
+
   inline void startNewPTCompFromStoreDst(CPtSet &pts, const DPIm &oldDpm) {
     const StoreSVFGNode *store = llvm::cast<StoreSVFGNode>(oldDpm.getLoc());
     const SVFGNode *storeDst = getDefSVFGNode(store->getPAGDstNode());
@@ -345,6 +835,7 @@ protected:
     assert(edge && "Edge not found!!");
     backwardPropDpm(pts, store->getPAGDstNodeID(), oldDpm, edge);
   }
+
   inline void backtraceToStoreSrc(CPtSet &pts, const DPIm &oldDpm) {
     const StoreSVFGNode *store = llvm::cast<StoreSVFGNode>(oldDpm.getLoc());
     const SVFGNode *storeSrc = getDefSVFGNode(store->getPAGSrcNode());
@@ -697,9 +1188,11 @@ protected:
                                  ///< stong updated there
   DDAStat *ddaStat;              ///< DDA stat
   SVFGBuilder svfgBuilder;       ///< SVFG Builder
+  NodeID curCandidate;           // [OS-CFI] hold current candidate node id
+  NodeToStoreMap mapNodeStore;   // [OS-CFI] ToDo
   TargetToOriginContextMap mapTOrgCtx;               // [OS-CFI] ToDo
   SinkToOriginSensitiveTupleSetMap mapSOrgSenTupSet; // [OS-CFI] ToDo
-  CallStackSet setCallStack;                         // [OS-CFI] ToDo
+  CallSwitchPairStack setCallStack;                  // [OS-CFI] ToDo
   SinkToCallStackMap mapCSSen;                       // [OS-CFI] ToDo
 };
 

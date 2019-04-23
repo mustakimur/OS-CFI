@@ -1,3 +1,8 @@
+/*
+ * Origin-sensitive Control Flow Integrity
+ * Author: Mustakimur R. Khandaker (mrk15e@my.fsu.edu)
+ * Affliation: Florida State University
+ */
 #ifndef WPA_H_
 #define WPA_H_
 
@@ -7,9 +12,8 @@
 #include <llvm/Analysis/AliasAnalysis.h>
 #include <llvm/Pass.h>
 
-#define DUMP_CFG_DEBUG 1
-
-#define HASH_ID_RANGE 10000000
+#define DUMP_CFG_DEBUG 1       // [OS-CFI] CFG DUMP FLAG
+#define HASH_ID_RANGE 10000000 // [OS-CFI] unique hash id range
 
 class SVFG;
 class SVFGEdge;

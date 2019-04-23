@@ -1,3 +1,8 @@
+/*
+ * Origin-sensitive Control Flow Integrity
+ * Author: Mustakimur R. Khandaker (mrk15e@my.fsu.edu)
+ * Affliation: Florida State University
+ */
 #include "DDA/DDAPass.h"
 #include "DDA/ContextDDA.h"
 #include "DDA/DDAClient.h"
@@ -146,6 +151,7 @@ void DDAPass::runPointerAnalysis(SVFModule module, u32_t kind) {
   if (WPANUM) {
     _client->collectWPANum(module);
   } else {
+    _pta->disablePrintStat();
     /// initialize
     _pta->initialize(module);
     /// compute points-to
@@ -165,7 +171,7 @@ void DDAPass::runPointerAnalysis(SVFModule module, u32_t kind) {
     computeCFG();
 
     // [OS-CFI] ToDo
-    insertIndirectBranch();
+    // insertIndirectBranch();
 
     // [OS-CFI] print out our CFGs
     dumpSUPACFG();
@@ -566,7 +572,7 @@ void DDAPass::computeCFG() {
       continue;
     }
 
-    // insertLabelAfterCall(iCallInst);
+    // insertLabelAfterCall(iCallInst); // [OS-CFI] ToDo
 
     // list origin sensitive cfg
     const OriginSensitiveTupleSet *opts =
@@ -650,7 +656,7 @@ void DDAPass::computeCFG() {
               if (std::get<2>(*oit)) {
                 oItem->originCTXInst = std::get<2>(*oit);
                 oItem->originCTXID = getHashID(std::get<2>(*oit));
-                insertLabelAfterCall(std::get<2>(*oit));
+                // insertLabelAfterCall(std::get<2>(*oit)); // [OS-CFI] ToDo
               } else {
                 oItem->originCTXInst = nullptr;
               }
@@ -662,46 +668,50 @@ void DDAPass::computeCFG() {
     }
 
     // list callsite sensitive cfg
-    CallStackSet *cfilbRes = _pta->getCSSensitiveSet(*cit);
-    /* for (PointsTo::iterator pit = pts.begin(), peit = pts.end(); pit != peit;
-         ++pit) {
-      if (_pta->isPointsTo(*pit)) {
-        for (callStackSetDDA::iterator itt = cfilbRes->begin(),
-                                       eitt = cfilbRes->end();
-             itt != eitt; ++itt) {
-          if (itt->first == *pit) {
-            source = itt->first;
-            callStackDDA tcStack(itt->second);
+    CallStackSet *cspts = _pta->getCSSensitiveSet(*cit);
+    if (cspts) {
+      for (PointsTo::iterator pit = pts.begin(), peit = pts.end(); pit != peit;
+           ++pit) {
+        if (_pta->getValueFromNodeID(*pit) &&
+            (isa<GlobalValue>(_pta->getValueFromNodeID(*pit)) ||
+             isa<Function>(_pta->getValueFromNodeID(*pit)))) {
+          for (CallStackSetIt csit = cspts->begin(), ecsit = cspts->end();
+               csit != ecsit; ++csit) {
+            if (csit->first == *pit) {
+              unsigned long target = csit->first;
+              CallSwitchPairStack tcStack(csit->second);
 
-            if (!tcStack.empty()) {
-              CFILB *cfilbItem = (CFILB *)malloc(sizeof(CFILB));
+              if (!tcStack.empty()) {
+                cCFG *cItem = (cCFG *)malloc(sizeof(cCFG));
 
-              cfilbItem->sink = iCallInst;
-              cfilbItem->sinkID = getHashID(iCallInst);
+                cItem->iCallInst = iCallInst;
+                cItem->iCallID = getHashID(iCallInst);
 
-              cfilbItem->source = _pta->getTargetValue(*pit);
-              cfilbItem->sourceID = *pit;
+                cItem->iCallTarget = _pta->getValueFromNodeID(*pit);
+                cItem->iCallTargetID = *pit;
 
-              cfilbItem->callStack = new vector<const llvm::Instruction *>();
-              cfilbItem->callStackID = new vector<unsigned long>();
+                cItem->cInstStack = new vector<const llvm::Instruction *>();
+                cItem->cIDStack = new vector<unsigned long>();
 
-              while (!tcStack.empty()) {
-                if (tcStack.top().second) {
-                  cfilbItem->callStack->push_back(tcStack.top().second);
-                  cfilbItem->callStackID->push_back(getHashID(tcStack.top().second));
+                while (!tcStack.empty()) {
+                  if (tcStack.top().second) {
+                    cItem->cInstStack->push_back(tcStack.top().second);
+                    cItem->cIDStack->push_back(getHashID(tcStack.top().second));
 
-                  insertLabelAfterCall(tcStack.top().second);
-                } else {
-                  break;
+                    // insertLabelAfterCall(tcStack.top().second); // [OS-CFI]
+                    // ToDo
+                  } else {
+                    break;
+                  }
+                  tcStack.pop();
                 }
-                tcStack.pop();
+                cCFGList.push_back(cItem);
               }
-              cfilbCFG.push_back(cfilbItem);
             }
           }
         }
       }
-    } */
+    }
 
     // list CI-CFG using SUPA
     for (PointsTo::iterator pit = pts.begin(), peit = pts.end(); pit != peit;
