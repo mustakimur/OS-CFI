@@ -575,12 +575,9 @@ void DDAPass::computeCFG() {
       if (iCallInst == nullptr) {
         const StmtSVFGNode *canStmt = dyn_cast<StmtSVFGNode>(node);
         iCallInst = (llvm::Instruction *)canStmt->getInst();
-        llvm::outs() << "[OS-CFI] ICall Null for " << *cit << ": " << *iCallInst
-                     << "\n";
       }
     }
     if (iCallInst == nullptr) {
-      llvm::outs() << "[OS-CFI] ICall Null for " << *cit << "\n";
       continue;
     }
 
@@ -605,18 +602,15 @@ void DDAPass::computeCFG() {
               Instruction *inst = (Instruction *)(std::get<1>(*oit))->getInst();
               Instruction *oInst = inst; // origin sensitive tuple store
                                          // instruction aka. origin
-              unsigned long originID = -1;
+              unsigned long originID = 0;
 
               // replace origin store instruction to call to update mpx table
               // instruction
               while (1) {
                 // update mpx from inside object creation
-                oInst = (Instruction *)oInst->getNextNonDebugInstruction();
                 if (isa<CallInst>(oInst)) {
                   CallInst *call = cast<CallInst>(oInst);
-                  if (call->getCalledFunction() &&
-                      call->getCalledFunction()->getName() ==
-                          "update_mpx_table") {
+                  if (call->getNumArgOperands() == 4) {
                     if (isa<ConstantInt>(oInst->getOperand(2))) {
                       ConstantInt *cint =
                           dyn_cast<ConstantInt>(oInst->getOperand(2));
@@ -626,36 +620,17 @@ void DDAPass::computeCFG() {
                   }
                 }
                 if (oInst->isTerminator()) {
-                  oInst = nullptr;
-                  break;
-                }
-              }
-
-              if (!oInst) {
-                // update mpx from function pointer store
-                llvm::Instruction *bInst = inst->getParent()->getFirstNonPHI();
-                llvm::StoreInst *sinst = llvm::dyn_cast<llvm::StoreInst>(inst);
-
-                while (1) {
-                  if (bInst->getNextNonDebugInstruction() == inst &&
-                      llvm::isa<llvm::CallInst>(bInst)) {
-                    llvm::CallInst *call =
-                        llvm::dyn_cast<llvm::CallInst>(bInst);
-                    if (call->getNumArgOperands() >= 3 &&
-                        call->getArgOperand(0) == sinst->getValueOperand()) {
-                      oInst = call;
-                      if (isa<ConstantInt>(oInst->getOperand(1))) {
-                        ConstantInt *cint =
-                            dyn_cast<ConstantInt>(oInst->getOperand(1));
-                        originID = cint->getZExtValue();
-                      }
-                      break;
-                    }
-                  }
-                  if (bInst->isTerminator()) {
+                  if (isa<BranchInst>(oInst)) {
+                    BranchInst *bInst = dyn_cast<BranchInst>(oInst);
+                    BasicBlock *bb = bInst->getSuccessor(1);
+                    oInst = (Instruction *)bb->getFirstNonPHI()
+                                ->stripPointerCasts();
+                  } else {
+                    oInst = nullptr;
                     break;
                   }
-                  bInst = bInst->getNextNonDebugInstruction();
+                } else {
+                  oInst = (Instruction *)oInst->getNextNonDebugInstruction();
                 }
               }
 
@@ -728,7 +703,6 @@ void DDAPass::computeCFG() {
     // list CI-CFG using SUPA
     for (PointsTo::iterator pit = pts.begin(), peit = pts.end(); pit != peit;
          ++pit) {
-      llvm::outs() << "[OS-CFI] Map: " << *cit << "\t" << *pit << "\n";
       if (_pta->getValueFromNodeID(*pit) &&
           (isa<GlobalValue>(_pta->getValueFromNodeID(*pit)) ||
            isa<Function>(_pta->getValueFromNodeID(*pit)))) {
@@ -752,8 +726,6 @@ void DDAPass::computeCFG() {
           atItem->iCallTargetID = *pit;
           atCFGList.push_back(atItem);
         }
-      } else {
-        llvm::outs() << "[OS-CFI] Removed " << *pit << "\n";
       }
     }
     // if the points-to set is empty, address-taken type matched set will be
