@@ -1,10 +1,8 @@
 /*
- * ContextDDA.cpp
- *
- *  Created on: Aug 17, 2014
- *      Author: Yulei Sui
+ * Origin-sensitive Control Flow Integrity
+ * Author: Mustakimur R. Khandaker (mrk15e@my.fsu.edu)
+ * Affliation: Florida State University
  */
-
 #include "DDA/ContextDDA.h"
 #include "DDA/DDAClient.h"
 #include "DDA/FlowDDA.h"
@@ -69,16 +67,14 @@ const CxtPtSet &ContextDDA::computeDDAPts(const CxtVar &var) {
   LocDPItem::setMaxBudget(cxtBudget);
 
   NodeID id = var.get_id();
-  setCurCandidate(id);
-
   PAGNode *node = getPAG()->getPAGNode(id);
   //[OS-CFI] map candidate node to their SVFG
   const SVFGNode *snode = getDefSVFGNode(node);
-  candidateSVFG[id] = snode;
+  setCurCandidate(id, snode);
 
   CxtLocDPItem dpm = getDPIm(var, snode);
   // [OS-CFI] Debug code:
-  if (CANDIDATE_DEBUG) {
+  if (DEBUG_SOLVER) {
     llvm::outs() << "[OS-CFI] ComputerDDAPts() for node[" << dpm.getCurNodeID()
                  << "] => SVFG: " << *snode << "["
                  << snode->getBB()
@@ -180,6 +176,66 @@ CxtPtSet ContextDDA::processGepPts(const GepSVFGNode *gep,
         tmpDstPts.set(var);
       } else
         assert(false && "new gep edge?");
+    }
+  }
+
+  // [OS-CFI] ToDo
+  for (CxtPtSet::iterator siter = srcPts.begin(); siter != srcPts.end();
+       ++siter) {
+    CxtVar src = *siter;
+    for (CxtPtSet::iterator diter = tmpDstPts.begin(); diter != tmpDstPts.end();
+         ++diter) {
+      CxtVar dst = *diter;
+      if (mapNodeStore.count(src.get_id()) > 0) {
+        mapNodeStore[dst.get_id()] = mapNodeStore[src.get_id()];
+        if (DEBUG_SOLVER) {
+          llvm::outs() << "[OS-CFI] mapNodeStore[" << dst.get_id()
+                       << "] = mapNodeStore[" << src.get_id() << "]\n";
+          if (DEBUG_DETAILS) {
+            llvm::outs() << "[OS-CFI] Store Instruction: "
+                         << *(mapNodeStore[src.get_id()]->getInst()) << "\n";
+          }
+        }
+        if (mapTOrgCtx.count(src.get_id()) > 0) {
+          for (InstructionSetIt it = mapTOrgCtx[src.get_id()].begin();
+               it != mapTOrgCtx[src.get_id()].end(); it++) {
+            if (*it != nullptr) {
+              mapSOrgSenTupSet[getCurCandidate()]->insert(std::make_tuple(
+                  dst.get_id(), mapNodeStore[src.get_id()], *it));
+              if (DEBUG_SOLVER) {
+                llvm::outs()
+                    << "[OS-CFI] mapSOrgSenTupSet[" << getCurCandidate()
+                    << "] <= <" << dst.get_id() << ", "
+                    << "mapNodeStore[" << src.get_id() << "], "
+                    << "mapTOrgCtx[" << src.get_id() << "]"
+                    << ">\n";
+              }
+            } else {
+              mapSOrgSenTupSet[getCurCandidate()]->insert(std::make_tuple(
+                  dst.get_id(), mapNodeStore[src.get_id()], nullptr));
+              if (DEBUG_SOLVER) {
+                llvm::outs()
+                    << "[oCFG-Count] mapSOrgSenTupSet[" << getCurCandidate()
+                    << "] <= <" << dst.get_id() << ", "
+                    << "mapNodeStore[" << src.get_id() << "], "
+                    << "nullptr]"
+                    << ">\n";
+              }
+            }
+          }
+        } else {
+          mapSOrgSenTupSet[getCurCandidate()]->insert(std::make_tuple(
+              dst.get_id(), mapNodeStore[src.get_id()], nullptr));
+          if (DEBUG_SOLVER) {
+            llvm::outs() << "[oCFG-Count] mapSOrgSenTupSet["
+                         << getCurCandidate() << "] <= <" << dst.get_id()
+                         << ", "
+                         << "mapNodeStore[" << src.get_id() << "], "
+                         << "nullptr]"
+                         << ">\n";
+          }
+        }
+      }
     }
   }
 

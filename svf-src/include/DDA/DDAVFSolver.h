@@ -49,6 +49,9 @@ public:
   // [OS-CFI] set of call stack maps to sink
   typedef std::map<NodeID, CallStackSet *> SinkToCallStackMap;
   typedef std::map<NodeID, CallStackSet *>::iterator SinkToCallStackMapIt;
+  // [OS-CFI] ToDo
+  typedef std::map<NodeID, const SVFGNode *> NodeToSVFGMap;
+  typedef std::map<NodeID, const SVFGNode *>::iterator NodeToSVFGMapIt;
 
   /// Constructor
   DDAVFSolver()
@@ -104,8 +107,9 @@ public:
   virtual inline NodeID getCurCandidate() { return curCandidate; }
 
   // [OS-CFI] setCurCandidate(): set current candidate node
-  virtual inline void setCurCandidate(NodeID id) {
+  virtual inline void setCurCandidate(NodeID id, const SVFGNode *node) {
     curCandidate = id;
+    candidateSVFG[id] = node;
     OriginSensitiveTupleSet *setOSen = new OriginSensitiveTupleSet();
     CallStackSet *setCSen = new CallStackSet();
     mapSOrgSenTupSet[curCandidate] = setOSen;
@@ -919,6 +923,7 @@ protected:
     /// handle out of budget case
     unionDDAPts(pts, findPT(dpm));
   }
+
   /// whether load and store are aliased
   virtual bool isMustAlias(const DPIm &loadDpm, const DPIm &storeDPm) {
     return false;
@@ -963,6 +968,7 @@ protected:
       return true;
     return false;
   }
+
   /// resolve function pointer
   void resolveFunPtr(const DPIm &dpm) {
     if (llvm::Instruction *callInst =
@@ -991,6 +997,7 @@ protected:
       }
     }
   }
+
   /// Methods to be implemented in child class
   //@{
   /// Get variable ID (PAGNodeID) according to CVar
@@ -1239,6 +1246,7 @@ protected:
   SinkToOriginSensitiveTupleSetMap mapSOrgSenTupSet; // [OS-CFI] ToDo
   CallSwitchPairStack setCallStack;                  // [OS-CFI] ToDo
   SinkToCallStackMap mapCSSen;                       // [OS-CFI] ToDo
+  NodeToSVFGMap candidateSVFG;                       // [OS-CFI] ToDo
 };
 
 #endif /* VALUEFLOWDDA_H_ */

@@ -1,10 +1,8 @@
 /*
- * FlowDDA.cpp
- *
- *  Created on: Jun 30, 2014
- *      Author: Yulei Sui, Sen Ye
+ * Origin-sensitive Control Flow Integrity
+ * Author: Mustakimur R. Khandaker (mrk15e@my.fsu.edu)
+ * Affliation: Florida State University
  */
-
 #include "DDA/FlowDDA.h"
 #include "DDA/DDAClient.h"
 #include "Util/AnalysisUtil.h"
@@ -25,9 +23,12 @@ void FlowDDA::computeDDAPts(NodeID id) {
   resetQuery();
   LocDPItem::setMaxBudget(flowBudget);
 
-  setCurCandidate(id);
-
   PAGNode *node = getPAG()->getPAGNode(id);
+
+  //[OS-CFI] map candidate node to their SVFG
+  const SVFGNode *snode = getDefSVFGNode(node);
+  setCurCandidate(id, snode);
+
   LocDPItem dpm = getDPIm(node->getId(), getDefSVFGNode(node));
 
   /// start DDA analysis
@@ -138,6 +139,64 @@ PointsTo FlowDDA::processGepPts(const GepSVFGNode *gep,
         assert(false && "new gep edge?");
     }
   }
+
+  // [OS-CFI] ToDo
+  for (PointsTo::iterator siter = srcPts.begin(); siter != srcPts.end();
+       ++siter) {
+    NodeID src = *siter;
+    for (PointsTo::iterator diter = tmpDstPts.begin(); diter != tmpDstPts.end();
+         ++diter) {
+      NodeID dst = *diter;
+      if (mapNodeStore.count(src) > 0) {
+        mapNodeStore[dst] = mapNodeStore[src];
+        if (DEBUG_SOLVER) {
+          llvm::outs() << "[OS-CFI] mapNodeStore[" << dst << "] = mapNodeStore["
+                       << src << "]\n";
+          if (DEBUG_DETAILS) {
+            llvm::outs() << "[OS-CFI] Store Instruction: "
+                         << *(mapNodeStore[src]->getInst()) << "\n";
+          }
+        }
+        if (mapTOrgCtx.count(src) > 0) {
+          for (InstructionSetIt it = mapTOrgCtx[src].begin();
+               it != mapTOrgCtx[src].end(); it++) {
+            if (*it != nullptr) {
+              mapSOrgSenTupSet[getCurCandidate()]->insert(
+                  std::make_tuple(dst, mapNodeStore[src], *it));
+              if (DEBUG_SOLVER) {
+                llvm::outs() << "[OS-CFI] mapSOrgSenTupSet["
+                             << getCurCandidate() << "] <= <" << dst << ", "
+                             << "mapNodeStore[" << src << "], "
+                             << "mapTOrgCtx[" << src << "]"
+                             << ">\n";
+              }
+            } else {
+              mapSOrgSenTupSet[getCurCandidate()]->insert(
+                  std::make_tuple(dst, mapNodeStore[src], nullptr));
+              if (DEBUG_SOLVER) {
+                llvm::outs() << "[oCFG-Count] mapSOrgSenTupSet["
+                             << getCurCandidate() << "] <= <" << dst << ", "
+                             << "mapNodeStore[" << src << "], "
+                             << "nullptr]"
+                             << ">\n";
+              }
+            }
+          }
+        } else {
+          mapSOrgSenTupSet[getCurCandidate()]->insert(
+              std::make_tuple(dst, mapNodeStore[src], nullptr));
+          if (DEBUG_SOLVER) {
+            llvm::outs() << "[oCFG-Count] mapSOrgSenTupSet["
+                         << getCurCandidate() << "] <= <" << dst << ", "
+                         << "mapNodeStore[" << src << "], "
+                         << "nullptr]"
+                         << ">\n";
+          }
+        }
+      }
+    }
+  }
+
   DBOUT(DDDA, outs() << "\t return created gep objs {");
   DBOUT(DDDA, analysisUtil::dumpSet(srcPts));
   DBOUT(DDDA, outs() << "} --> {");

@@ -1,3 +1,8 @@
+/*
+ * Origin-sensitive Control Flow Integrity
+ * Author: Mustakimur R. Khandaker (mrk15e@my.fsu.edu)
+ * Affliation: Florida State University
+ */
 #ifndef DDACLIENT_H_
 #define DDACLIENT_H_
 
@@ -84,6 +89,7 @@ public:
   ~FunptrDDAClient() {}
 
   /// Only collect function pointers as query candidates.
+  // [OS-CFI] A better way to set current candidate could be this
   virtual inline NodeSet &collectCandidateQueries(PAG *p) {
     setPAG(p);
     for (PAG::CallSiteToFunPtrMap::const_iterator

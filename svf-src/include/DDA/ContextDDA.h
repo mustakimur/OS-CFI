@@ -1,3 +1,8 @@
+/*
+ * Origin-sensitive Control Flow Integrity
+ * Author: Mustakimur R. Khandaker (mrk15e@my.fsu.edu)
+ * Affliation: Florida State University
+ */
 #ifndef ContextDDA_H_
 #define ContextDDA_H_
 
@@ -6,13 +11,9 @@
 #include "Util/DPItem.h"
 #include "Util/DataFlowUtil.h"
 
-#define CANDIDATE_DEBUG 1 // [OS-CFI] Debug variable for candidate information
-
 class FlowDDA;
 class DDAClient;
 typedef CxtStmtDPItem<SVFGNode> CxtLocDPItem;
-typedef std::map<NodeID, const SVFGNode *> NodeToSVFGMap;
-typedef std::map<NodeID, const SVFGNode *>::iterator NodeToSVFGMapIt;
 
 /*!
  * Context-, Flow- Sensitive Demand-driven Analysis
@@ -152,6 +153,18 @@ public:
     DBOUT(DDDA, llvm::outs()
                     << "\t add points-to target " << var << " to dpm ");
     DBOUT(DDDA, dpm.dump());
+
+    if (DEBUG_SOLVER) {
+      llvm::outs() << "[OS-CFI] Address Taken => " << addr->getId() << "\n";
+      if (DEBUG_DETAILS) {
+        if (addr->getInst())
+          llvm::outs() << *(addr->getInst()) << "\n";
+        else
+          llvm::outs() << "Unavailable address taken instruction\n";
+      }
+    }
+
+    handleOSensitivity(dpm, addr, true);
   }
 
   /// Propagate along indirect value-flow if two objects of load and store are
@@ -186,7 +199,6 @@ private:
   FlowDDA *flowDDA;                 ///< downgrade to flowDDA if out-of-budget
   DDAClient *_client;               ///< DDA client
   PTACFInfoBuilder loopInfoBuilder; ///< LoopInfo
-  NodeToSVFGMap candidateSVFG;
 };
 
 #endif /* ContextDDA_H_ */
