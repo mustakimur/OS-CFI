@@ -31,7 +31,7 @@ typedef enum FIX_TYPE { OVER_APPROXIMATE = 1, UNDER_APPROXIMATE = 2 } fixType;
 // 2) Origin Sensitive CFG (oCFG)
 // 3) Callsite Sensitive CFG (cCFG)
 // 4) Type and address taken CFG (Fix the error)
-typedef enum CFG_TYPE { SUPA_CFG = 1, OCFG = 2, CCFG = 3, ATCFG = 3 } cfgType;
+typedef enum CFG_TYPE { SUPA_CFG = 1, OCFG = 2, CCFG = 3, ATCFG = 4 } cfgType;
 
 // [OS-CFI] oCFG Data Structure
 // Origin Context can be null

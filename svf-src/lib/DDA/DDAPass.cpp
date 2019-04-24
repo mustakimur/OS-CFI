@@ -539,6 +539,11 @@ void DDAPass::fillEmptyPointsToSet(const Instruction *iCallInst) {
 void DDAPass::computeCFG() {
   // get candidate queries
   const NodeSet &candidates = _client->getCandidateQueries();
+  if (DEBUG_SOLVER) {
+    llvm::outs() << "[OS-CFI] Number of collected candidate queries is "
+                 << candidates.size() << "\n";
+  }
+
   for (NodeSet::iterator cit = candidates.begin(), ceit = candidates.end();
        cit != ceit; ++cit) {
     // for each queries, extract candidate SVFG node and points-to set
@@ -567,8 +572,15 @@ void DDAPass::computeCFG() {
         }
         iCallInst = iCallInst->getNextNonDebugInstruction();
       }
+      if (iCallInst == nullptr) {
+        const StmtSVFGNode *canStmt = dyn_cast<StmtSVFGNode>(node);
+        iCallInst = (llvm::Instruction *)canStmt->getInst();
+        llvm::outs() << "[OS-CFI] ICall Null for " << *cit << ": " << *iCallInst
+                     << "\n";
+      }
     }
     if (iCallInst == nullptr) {
+      llvm::outs() << "[OS-CFI] ICall Null for " << *cit << "\n";
       continue;
     }
 
@@ -716,12 +728,14 @@ void DDAPass::computeCFG() {
     // list CI-CFG using SUPA
     for (PointsTo::iterator pit = pts.begin(), peit = pts.end(); pit != peit;
          ++pit) {
+      llvm::outs() << "[OS-CFI] Map: " << *cit << "\t" << *pit << "\n";
       if (_pta->getValueFromNodeID(*pit) &&
           (isa<GlobalValue>(_pta->getValueFromNodeID(*pit)) ||
            isa<Function>(_pta->getValueFromNodeID(*pit)))) {
         supaCFG *sItem = (supaCFG *)malloc(sizeof(supaCFG));
 
         sItem->iCallInst = iCallInst;
+        sItem->iCallID = getHashID(iCallInst);
         sItem->iCallTarget = _pta->getValueFromNodeID(*pit);
         sItem->iCallTargetID = *pit;
 
@@ -738,6 +752,8 @@ void DDAPass::computeCFG() {
           atItem->iCallTargetID = *pit;
           atCFGList.push_back(atItem);
         }
+      } else {
+        llvm::outs() << "[OS-CFI] Removed " << *pit << "\n";
       }
     }
     // if the points-to set is empty, address-taken type matched set will be

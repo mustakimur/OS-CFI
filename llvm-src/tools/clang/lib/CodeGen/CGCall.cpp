@@ -4262,14 +4262,25 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
   SmallVector<llvm::OperandBundleDef, 1> BundleList =
       getBundlesForFunclet(CalleePtr);
 
-  /*
-   * OS-CFI clang codegen modification to instrument reference monitor for
-   * C-style indirect call
-   * Beginning of modification
-   */
-  if (!CalleePtr->hasName() && !Callee.isVirtual()) {
-    llvm::Value *tempCalleePtr = CalleePtr;
+  // Emit the actual call/invoke instruction.
+  llvm::CallSite CS;
+  if (!InvokeDest) {
+    CS = Builder.CreateCall(CalleePtr, IRCallArgs, BundleList);
+  } else {
+    llvm::BasicBlock *Cont = createBasicBlock("invoke.cont");
+    CS = Builder.CreateInvoke(CalleePtr, Cont, InvokeDest, IRCallArgs,
+                              BundleList);
+    // EmitBlock(Cont);
+  }
+  llvm::Instruction *CI = CS.getInstruction();
+  if (CS.isIndirectCall()) {
+    llvm::outs() << "[OS-CFI] An inidirect call: " << *CI << "\n";
+    llvm::Value *tempCalleePtr = CS.getCalledValue();
+    llvm::outs() << "[OS-CFI] Check ICall: " << *tempCalleePtr << "\n";
+    // llvm::IRBuilder<> rBuilder(CI);
+    CI->eraseFromParent();
     while (1) {
+      tempCalleePtr = tempCalleePtr->stripPointerCasts();
       if (isa<llvm::LoadInst>(tempCalleePtr)) {
         auto *loadCalleePtr = dyn_cast<llvm::LoadInst>(tempCalleePtr);
 
@@ -4288,6 +4299,14 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
         llvm::CallInst *rfcall =
             Builder.CreateCall(rf, {calleePtrAddr, calleePtrVal});
         rfcall->setTailCallKind(llvm::CallInst::TailCallKind::TCK_NoTail);
+        if (!InvokeDest) {
+          CS = Builder.CreateCall(CalleePtr, IRCallArgs, BundleList);
+        } else {
+          llvm::BasicBlock *Cont = createBasicBlock("invoke.cont");
+          CS = Builder.CreateInvoke(CalleePtr, Cont, InvokeDest, IRCallArgs,
+                                    BundleList);
+          EmitBlock(Cont);
+        }
         break;
       } else if (isa<llvm::BitCastInst>(tempCalleePtr)) {
         // if current IR is for casting the calleePtr to another type
@@ -4355,6 +4374,14 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
         llvm::CallInst *rfcall =
             Builder.CreateCall(rf, {phiCalleePtrAddr, calleePtrVal});
         rfcall->setTailCallKind(llvm::CallInst::TailCallKind::TCK_NoTail);
+        if (!InvokeDest) {
+          CS = Builder.CreateCall(CalleePtr, IRCallArgs, BundleList);
+        } else {
+          llvm::BasicBlock *Cont = createBasicBlock("invoke.cont");
+          CS = Builder.CreateInvoke(CalleePtr, Cont, InvokeDest, IRCallArgs,
+                                    BundleList);
+          EmitBlock(Cont);
+        }
         break;
       } else if (isa<llvm::IntToPtrInst>(tempCalleePtr)) {
         auto *cast = dyn_cast<llvm::IntToPtrInst>(tempCalleePtr);
@@ -4374,23 +4401,13 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
       }
     }
   }
+
+  CI = CS.getInstruction();
   /*
    * OS-CFI clang codegen modification to instrument reference monitor for
    * C-style indirect call
    * Ending of modification
    */
-
-  // Emit the actual call/invoke instruction.
-  llvm::CallSite CS;
-  if (!InvokeDest) {
-    CS = Builder.CreateCall(CalleePtr, IRCallArgs, BundleList);
-  } else {
-    llvm::BasicBlock *Cont = createBasicBlock("invoke.cont");
-    CS = Builder.CreateInvoke(CalleePtr, Cont, InvokeDest, IRCallArgs,
-                              BundleList);
-    EmitBlock(Cont);
-  }
-  llvm::Instruction *CI = CS.getInstruction();
   if (callOrInvoke)
     *callOrInvoke = CI;
 

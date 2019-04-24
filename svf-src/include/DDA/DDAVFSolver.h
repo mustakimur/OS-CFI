@@ -118,7 +118,7 @@ public:
 
   // [OS-CFI] dumpCallStack(): print the current call-stack
   void dumpCallStack() {
-    if (DEBUG_SOLVER) {
+    if (DEBUG_DETAILS) {
       llvm::outs() << "***************[OS-CFI] CALL STACK ("
                    << setCallStack.size() << ") [OS-CFI]********************\n";
       CallSwitchPairStack curStack(setCallStack);
