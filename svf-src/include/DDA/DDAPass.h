@@ -32,6 +32,7 @@ typedef enum FIX_TYPE { OVER_APPROXIMATE = 1, UNDER_APPROXIMATE = 2 } fixType;
 // 3) Callsite Sensitive CFG (cCFG)
 // 4) Type and address taken CFG (Fix the error)
 typedef enum CFG_TYPE { SUPA_CFG = 1, OCFG = 2, CCFG = 3, ATCFG = 4 } cfgType;
+typedef enum TARGET_TYPE { FUNC = 1, VT = 2 } targetType;
 
 // [OS-CFI] oCFG Data Structure
 // Origin Context can be null
@@ -172,7 +173,7 @@ private:
   void dumpatCFG();   // [OS-CFI] print ADDRTY-CFG
   void labelForCSite(const llvm::Instruction *, unsigned long); // [OS-CFI] ToDo
   void createLabelForCS();                                      // [OS-CFI] ToDo
-  void createLabelForValue(SVFModule);                       // [OS-CFI] ToDo
+  void createLabelForValue(SVFModule);                          // [OS-CFI] ToDo
   bool isTypeMatch(const llvm::Instruction *,
                    const llvm::Value *); // [OS-CFI] test the type match between
                                          // sink and source

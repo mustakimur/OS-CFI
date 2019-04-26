@@ -29,55 +29,127 @@ def main():
         while eLine:
             items = eLine.strip().split('\t')
             if (items[0] == '2'):
-                if (not items[1] in osCFG):
-                    osCFG[items[1]] = []
-                if (len(items) == 5):
-                    osCFG[items[1]].append((tagLabelMap[int(items[2], 10)],
-                                            int(items[3], 10), tagLabelMap[int(
-                                                items[4], 10)]))
+                if (len(items) == 6):
+                    key = (items[1], items[2], int(items[4], 10),
+                           tagLabelMap[int(items[5], 10)])
                 else:
-                    osCFG[items[1]].append((tagLabelMap[int(items[2], 10)],
-                                            int(items[3], 10), 0))
+                    key = (items[1], items[2], int(items[4], 10), 0)
+
+                if (not key in osCFG):
+                    osCFG[key] = []
+                osCFG[key].append(tagLabelMap[int(items[3], 10)])
             if (items[0] == '3'):
-                if (not items[1] in csCFG):
-                    csCFG[items[1]] = []
                 tmp = []
-                for x in range(2, len(items), 1):
+                tmp.append(items[1])
+                tmp.append(items[2])
+                for x in range(4, len(items), 1):
                     tmp.append(tagLabelMap[int(items[x], 10)])
-                csCFG[items[1]].append(tuple(tmp))
+                key = tuple(tmp)
+                if (not key in csCFG):
+                    csCFG[key] = []
+
+                csCFG[key].append(tagLabelMap[int(items[3], 10)])
 
             if (items[0] == '4'):
-                if (not items[1] in ciCFG):
-                    ciCFG[items[1]] = []
-                ciCFG[items[1]].append(tagLabelMap[int(items[2], 10)])
+                key = (items[1], items[2])
+                if (not key in ciCFG):
+                    ciCFG[key] = []
+                ciCFG[key].append(tagLabelMap[int(items[3], 10)])
 
             eLine = fp.readline()
     fp.close()
 
+    osChoice = dict()
+    csChoice = dict()
+    ciChoice = dict()
+
+    for k, v in ciCFG.iteritems():
+        ototal = 0
+        ocount = 0
+        itotal = 0
+        icount = 0
+        osChoice[k] = 9999
+        csChoice[k] = 9999
+        ciChoice[k] = 9999
+
+        for ok, ov in osCFG.iteritems():
+            if (k[1] == ok[1]):
+                ototal += len(set(ov))
+                ocount += 1
+        if (ocount > 0):
+            osChoice[k] = ((float)(ototal) / (float)(ocount))
+
+        ctotal = 0
+        ccount = 0
+        for ck, cv in csCFG.iteritems():
+            if (k[1] == ck[1]):
+                ctotal += len(set(cv))
+                ccount += 1
+        if (ccount > 0):
+            csChoice[k] = ((float)(ctotal) / (float)(ccount))
+
+        itotal += len(set(v))
+        icount += 1
+        if (icount > 0):
+            ciChoice[k] = ((float)(itotal) / (float)(icount))
+
+    fChoice = dict()
+    for k, v in ciCFG.iteritems():
+        if (ciChoice[k] <= osChoice[k] and ciChoice[k] <= csChoice[k]):
+            fChoice[k] = 1
+        elif (osChoice[k] < csChoice[k] and osChoice[k] < ciChoice[k]):
+            fChoice[k] = 2
+        elif (csChoice[k] <= osChoice[k] and csChoice[k] < ciChoice[k]):
+            fChoice[k] = 3
+
+    print(fChoice)
+
     osFile = str(sys.argv[1]) + "osCFG.bin"
+    # cpoint, origin, originctx, target
     fw = open(osFile, "w")
     for k, v in osCFG.iteritems():
-        for item in v:
-            fw.write(
-                str(k) + '\t' + str(item[0]) + '\t' + str(item[1]) + '\t' +
-                str(item[2]) + '\n')
+        if (fChoice[(k[0], k[1])] == 2):
+            for item in v:
+                fw.write(
+                    str(k[0]) + '\t' + str(k[1]) + '\t' + str(k[2]) + '\t' +
+                    str(k[3]) + '\t' + str(item) + '\n')
     fw.close()
 
-    csFile = str(sys.argv[1]) + "csCFG.bin"
-    fw = open(csFile, "w")
+    cs1File = str(sys.argv[1]) + "cs1CFG.bin"
+    cs2File = str(sys.argv[1]) + "cs2CFG.bin"
+    cs3File = str(sys.argv[1]) + "cs3CFG.bin"
+    fw1 = open(cs1File, "w")
+    fw2 = open(cs2File, "w")
+    fw3 = open(cs3File, "w")
+
     for k, v in csCFG.iteritems():
-        for item in v:
-            fw.write(str(k))
-            for ii in item:
-                fw.write('\t' + str(ii))
-            fw.write('\n')
-    fw.close()
+        if (fChoice[(k[0], k[1])] == 3):
+            ctx = ''
+            c = 0
+            for ii in k:
+                if(c > 5):
+                    break
+                ctx += (str(ii) + '\t')
+                c+=1
+
+            for item in v:
+                if(len(k) == 3):
+                    fw1.write(ctx + '\t' + str(item) + '\n')
+                elif(len(k) == 4):
+                    fw2.write(ctx + '\t' + str(item) + '\n')
+                else:
+                    fw3.write(ctx + '\t' + str(item) + '\n')
+    fw1.close()
+    fw2.close()
+    fw3.close()
 
     ciFile = str(sys.argv[1]) + "ciCFG.bin"
     fw = open(ciFile, "w")
     for k, v in ciCFG.iteritems():
-        for item in v:
-            fw.write(str(k) + '\t' + str(item) + '\n')
+        if (fChoice[(k[0], k[1])] == 1):
+            for item in v:
+                fw.write(
+                    str(k[0]) + '\t' + str(k[1]) + '\t' + str(item) + '\n')
     fw.close()
 
 

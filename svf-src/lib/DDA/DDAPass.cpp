@@ -807,8 +807,16 @@ void DDAPass::dumpSUPACFG() {
       outs() << "iCall Target: " << (item->iCallTarget)->getName() << "\n";
       outs() << "\n";
     }
-    errs() << SUPA_CFG << "\t" << item->iCallID << "\t" << item->iCallTargetID
-           << "\n";
+
+    int T;
+    if (isa<Function>(item->iCallTarget)) {
+      T = FUNC;
+    } else {
+      T = VT;
+    }
+
+    errs() << SUPA_CFG << "\t" << T << "\t" << item->iCallID << "\t"
+           << item->iCallTargetID << "\n";
   }
 }
 
@@ -827,8 +835,16 @@ void DDAPass::dumpatCFG() {
       outs() << "iCall Target: " << (item->iCallTarget)->getName() << "\n";
       outs() << "\n";
     }
-    errs() << ATCFG << "\t" << item->iCallID << "\t" << item->iCallTargetID
-           << "\n";
+
+    int T;
+    if (isa<Function>(item->iCallTarget)) {
+      T = FUNC;
+    } else {
+      T = VT;
+    }
+
+    errs() << ATCFG << "\t" << T << "\t" << item->iCallID << "\t"
+           << item->iCallTargetID << "\n";
   }
 }
 
@@ -850,8 +866,16 @@ void DDAPass::dumpoCFG() {
       }
       outs() << "\n";
     }
-    errs() << OCFG << "\t" << item->iCallID << "\t" << item->iCallTargetID
-           << "\t" << item->originID;
+
+    int T;
+    if (isa<Function>(item->iCallTarget)) {
+      T = FUNC;
+    } else {
+      T = VT;
+    }
+
+    errs() << OCFG << "\t" << T << "\t" << item->iCallID << "\t"
+           << item->iCallTargetID << "\t" << item->originID;
     if (item->originCTXInst) {
       errs() << "\t" << item->originCTXID;
     }
@@ -880,7 +904,15 @@ void DDAPass::dumpcCFG() {
       llvm::outs() << "\n";
     }
 
-    errs() << CCFG << "\t" << item->iCallID << "\t" << item->iCallTargetID;
+    int T;
+    if (isa<Function>(item->iCallTarget)) {
+      T = FUNC;
+    } else {
+      T = VT;
+    }
+
+    errs() << CCFG << "\t" << T << "\t" << item->iCallID << "\t"
+           << item->iCallTargetID;
     for (std::vector<unsigned long>::iterator ctxit = item->cIDStack->begin();
          ctxit != item->cIDStack->end(); ++ctxit) {
       errs() << "\t" << *ctxit;
