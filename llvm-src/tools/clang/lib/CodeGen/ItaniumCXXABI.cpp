@@ -1793,6 +1793,7 @@ CGCallee ItaniumCXXABI::getVirtualFunctionPointer(CodeGenFunction &CGF,
                                                   GlobalDecl GD, Address This,
                                                   llvm::Type *Ty,
                                                   SourceLocation Loc) {
+  std::hash<std::string> hash_fn;
   Ty = Ty->getPointerTo()->getPointerTo();
   auto *MethodDecl = cast<CXXMethodDecl>(GD.getDecl());
   llvm::Value *VTable = CGF.GetVTablePtr(This, Ty, MethodDecl->getParent());
@@ -1831,6 +1832,16 @@ CGCallee ItaniumCXXABI::getVirtualFunctionPointer(CodeGenFunction &CGF,
      * virtual function indirect call
      * Beginning of modification
      */
+    // create an identification for the ICT
+    std::string idCreator;
+    llvm::raw_string_ostream rso(idCreator);
+    Loc.print(rso, CGM.getContext().getSourceManager());
+    unsigned long id = hash_fn(idCreator) % 10000000;
+
+    llvm::Value *id_value = llvm::ConstantInt::get(CGM.IntTy, id, false);
+    llvm::Value *id_value_64 =
+        CGF.Builder.CreateIntCast(id_value, CGM.Int64Ty, false);
+
     llvm::Value *vTableAddr = CGF.Builder.CreatePtrToInt(VTable, CGM.Int64Ty);
     llvm::Value *thisPtrAddr =
         CGF.Builder.CreateBitCast(This.getPointer(), CGM.VoidPtrTy);
@@ -1839,12 +1850,13 @@ CGCallee ItaniumCXXABI::getVirtualFunctionPointer(CodeGenFunction &CGF,
 
     // prepare to call reference monitor
     llvm::FunctionType *vreftype = llvm::FunctionType::get(
-        CGM.VoidTy, {CGM.VoidPtrTy, CGM.Int64Ty, CGM.VoidPtrTy}, false);
+        CGM.VoidTy, {CGM.Int64Ty, CGM.VoidPtrTy, CGM.Int64Ty, CGM.VoidPtrTy},
+        false);
     llvm::Constant *rf =
         CGM.CreateRuntimeFunction(vreftype, "vcall_reference_monitor");
 
-    llvm::CallInst *rfcall =
-        CGF.Builder.CreateCall(rf, {thisPtrAddr, vTableAddr, calleePtrVal});
+    llvm::CallInst *rfcall = CGF.Builder.CreateCall(
+        rf, {id_value_64, thisPtrAddr, vTableAddr, calleePtrVal});
     rfcall->setTailCallKind(llvm::CallInst::TailCallKind::TCK_NoTail);
     /*
      * OS-CFI clang codegen modification to instrument reference monitor for

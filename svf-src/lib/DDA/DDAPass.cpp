@@ -9,6 +9,7 @@
 #include "DDA/FlowDDA.h"
 #include "MemoryModel/PointerAnalysis.h"
 #include <limits.h>
+#include <llvm/IR/IRBuilder.h>
 #include <llvm/Support/CommandLine.h>
 #include <sstream>
 
@@ -71,6 +72,8 @@ unsigned long DDAPass::getHashID(const Instruction *inst) {
   raw_string_ostream rso(str);
   inst->print(rso);
   str += ("[" + inst->getParent()->getParent()->getName().str() + "]");
+  llvm::outs() << "[OS-CFI] map00 " << *inst << " => "
+               << (hash_fn(str) % HASH_ID_RANGE) << "\n";
   return (hash_fn(str) % HASH_ID_RANGE);
 }
 
@@ -170,8 +173,9 @@ void DDAPass::runPointerAnalysis(SVFModule module, u32_t kind) {
     // [OS-CFI] SUPA completes process and it is time to compute our CFGs
     computeCFG();
 
-    // [OS-CFI] ToDo
-    // insertIndirectBranch();
+    // [OS-CFI] Process the labeling
+    createLabelForCS();
+    createLabelForValue(module);
 
     // [OS-CFI] print out our CFGs
     dumpSUPACFG();
@@ -373,22 +377,24 @@ void DDAPass::printQueryPTS() {
   llvm::outs() << "\n";
 }
 
-// [OS-CFI] ToDo
-void DDAPass::insertLabelAfterCall(const llvm::Instruction *callInst) {
-  /*Instruction *iInst = (llvm::Instruction *)callInst;
+// [OS-CFI] labelForCSite(): create mapping of call-sites to its contained
+// function
+void DDAPass::labelForCSite(const llvm::Instruction *callInst,
+                            unsigned long id) {
+  Instruction *iInst = (llvm::Instruction *)callInst;
 
   BasicBlock *iBB = (llvm::BasicBlock *)callInst->getParent();
   Function *FN = (llvm::Function *)iBB->getParent();
 
-  funToCallSiteMap[FN].insert(iInst);*/
+  mapFnCSite[FN].insert(iInst);
+  mapInstID[iInst] = id;
 }
 
 // [OS-CFI] ToDo
-void DDAPass::insertIndirectBranch() {
-  /*
-  for (std::map<llvm::Function *, std::set<llvm::Instruction *>>::iterator fit =
-           funToCallSiteMap.begin();
-       fit != funToCallSiteMap.end(); ++fit) {
+void DDAPass::createLabelForCS() {
+  std::hash<std::string> hash_fn;
+  for (FuncToInstSetMapIt fit = mapFnCSite.begin(); fit != mapFnCSite.end();
+       ++fit) {
     Function *FN = fit->first;
     for (Function::iterator b = FN->begin(), be = FN->end(); b != be; ++b) {
       BasicBlock &iBB = *b;
@@ -399,10 +405,11 @@ void DDAPass::insertIndirectBranch() {
           // create a new basic block
           BasicBlock *nBB = BasicBlock::Create(FN->getContext(), "", FN, &iBB);
           iBB.replaceSuccessorsPhiUsesWith(nBB);
-          funToBBMap[FN].insert(nBB);
+          mapFnBB[FN].insert(nBB);
 
-
-          BBToHashIDMap[nBB] = getHashID(inst);
+          mapBBID[nBB] = mapInstID[&inst];
+          llvm::outs() << "[OS-CFI] map01 " << inst << " => "
+                       << mapInstID[&inst] << "\n";
 
           // create branch instruction to new basic block
           IRBuilder<> iBuilder(&iBB);
@@ -418,9 +425,7 @@ void DDAPass::insertIndirectBranch() {
     }
   }
 
-  for (std::map<llvm::Function *, std::set<llvm::BasicBlock *>>::iterator fit =
-           funToBBMap.begin();
-       fit != funToBBMap.end(); ++fit) {
+  for (FuncToBBSetMapIt fit = mapFnBB.begin(); fit != mapFnBB.end(); ++fit) {
     Function *fn = fit->first;
 
     BasicBlock *nBB = BasicBlock::Create(fn->getContext(), "", fn, nullptr);
@@ -443,7 +448,7 @@ void DDAPass::insertIndirectBranch() {
       iBr->addDestination(*it);
       BlockAddress *bba = BlockAddress::get(fn, *it);
 
-      Constant *tag_id = ConstantInt::get(int64Ty, BBToHashIDMap[*it], false);
+      Constant *tag_id = ConstantInt::get(int64Ty, mapBBID[*it], false);
       Constant *tag = ConstantFolder().CreateIntToPtr(tag_id, int8PtTy);
 
       listBA.push_back(tag);
@@ -461,9 +466,45 @@ void DDAPass::insertIndirectBranch() {
                            GlobalValue::InternalLinkage, blockItems,
                            fn->getName().str() + "@labelTracker");
     gvar_ptr_abc->setAlignment(16);
-    gvar_ptr_abc->setSection("cfg_label_data");
+    gvar_ptr_abc->setSection("cfg_label_tracker");
     gvar_ptr_abc->addAttribute(llvm::Attribute::OptimizeNone);
-  }*/
+  }
+}
+
+void DDAPass::createLabelForValue(SVFModule SM) {
+  llvm::Module *M = SM.getModule(0);
+  PointerType *int32PtTy = Type::getInt32PtrTy(M->getContext());
+  IntegerType *int32Ty = Type::getInt32Ty(M->getContext());
+
+  // list the BlockAddress from BasicBlock
+  std::vector<Constant *> listBA;
+
+  for (ValToIDMapIt fit = mapValID.begin(); fit != mapValID.end(); ++fit) {
+    Value *val = (Value *)fit->first;
+    if (isa<Constant>(val)) {
+      Constant *C = dyn_cast<Constant>(val);
+      unsigned long id = fit->second;
+
+      Constant *CConst =
+          ConstantExpr::getCast(Instruction::BitCast, C, int32PtTy);
+
+      Constant *tag_id = ConstantInt::get(int32Ty, id, false);
+      Constant *tag = ConstantFolder().CreateIntToPtr(tag_id, int32PtTy);
+
+      listBA.push_back(tag);
+      listBA.push_back(CConst);
+    }
+  }
+
+  ArrayRef<Constant *> blockArray(listBA);
+  // create the constant type and array
+  ArrayType *pArrTy = ArrayType::get(int32PtTy, listBA.size());
+  Constant *blockItems = ConstantArray::get(pArrTy, blockArray);
+
+  GlobalVariable *gvar_target_data =
+      new GlobalVariable(*M, blockItems->getType(), true,
+                         GlobalValue::ExternalLinkage, blockItems, "GL_TABLE");
+  gvar_target_data->setSection("cfg_label_tracker");
 }
 
 // [OS-CFI] isTypeMatch(): return true if params/args and return types matched
@@ -550,10 +591,12 @@ void DDAPass::computeCFG() {
     // information
     const SVFGNode *node = _pta->getSVFGForCandidateNode(*cit);
     const PointsTo &pts = _pta->getPts(*cit); // points-to set
+    unsigned long iCallID = 0;
 
     // [OS-CFI] initially the sink is not the iCall but immediate load
     // instruction
     llvm::Instruction *iCallInst = nullptr;
+    llvm::Instruction *rCallInst = nullptr;
     if (isa<StmtSVFGNode>(node)) {
       const StmtSVFGNode *canStmt = dyn_cast<StmtSVFGNode>(node);
       iCallInst = (llvm::Instruction *)canStmt->getInst();
@@ -561,6 +604,7 @@ void DDAPass::computeCFG() {
       while (1) {
         if (isa<CallInst>(iCallInst)) {
           if (c == 0) {
+            rCallInst = iCallInst;
             c++;
           } else {
             break;
@@ -581,7 +625,14 @@ void DDAPass::computeCFG() {
       continue;
     }
 
-    // insertLabelAfterCall(iCallInst); // [OS-CFI] ToDo
+    if (isa<CallInst>(rCallInst)) {
+      CallInst *call = dyn_cast<CallInst>(rCallInst);
+      if (call->getNumArgOperands() == 3 &&
+          isa<ConstantInt>(call->getOperand(0))) {
+        ConstantInt *cint = dyn_cast<ConstantInt>(rCallInst->getOperand(0));
+        iCallID = cint->getZExtValue();
+      }
+    }
 
     // list origin sensitive cfg
     const OriginSensitiveTupleSet *opts =
@@ -636,14 +687,17 @@ void DDAPass::computeCFG() {
 
               oCFG *oItem = (oCFG *)malloc(sizeof(oCFG));
               oItem->iCallInst = iCallInst;
-              oItem->iCallID = getHashID(iCallInst);
+              oItem->iCallID = iCallID;
               oItem->iCallTarget = _pta->getValueFromNodeID(*pit);
               oItem->iCallTargetID = *pit;
               oItem->originID = originID;
               if (std::get<2>(*oit)) {
                 oItem->originCTXInst = std::get<2>(*oit);
                 oItem->originCTXID = getHashID(std::get<2>(*oit));
-                // insertLabelAfterCall(std::get<2>(*oit)); // [OS-CFI] ToDo
+                labelForCSite(std::get<2>(*oit),
+                              getHashID(std::get<2>(
+                                  *oit))); // [OS-CFI] we need a label for
+                                           // origin context call-site
               } else {
                 oItem->originCTXInst = nullptr;
               }
@@ -672,7 +726,7 @@ void DDAPass::computeCFG() {
                 cCFG *cItem = (cCFG *)malloc(sizeof(cCFG));
 
                 cItem->iCallInst = iCallInst;
-                cItem->iCallID = getHashID(iCallInst);
+                cItem->iCallID = iCallID;
 
                 cItem->iCallTarget = _pta->getValueFromNodeID(*pit);
                 cItem->iCallTargetID = *pit;
@@ -685,8 +739,11 @@ void DDAPass::computeCFG() {
                     cItem->cInstStack->push_back(tcStack.top().second);
                     cItem->cIDStack->push_back(getHashID(tcStack.top().second));
 
-                    // insertLabelAfterCall(tcStack.top().second); // [OS-CFI]
-                    // ToDo
+                    labelForCSite(
+                        tcStack.top().second,
+                        getHashID(tcStack.top()
+                                      .second)); // [OS-CFI] we need a label for
+                                                 // every call-site context
                   } else {
                     break;
                   }
@@ -709,9 +766,10 @@ void DDAPass::computeCFG() {
         supaCFG *sItem = (supaCFG *)malloc(sizeof(supaCFG));
 
         sItem->iCallInst = iCallInst;
-        sItem->iCallID = getHashID(iCallInst);
+        sItem->iCallID = iCallID;
         sItem->iCallTarget = _pta->getValueFromNodeID(*pit);
         sItem->iCallTargetID = *pit;
+        mapValID[sItem->iCallTarget] = *pit;
 
         supaCFGList.push_back(sItem);
         // if the points-to set is overapproximated, then type mismatch can
@@ -720,7 +778,7 @@ void DDAPass::computeCFG() {
           atCFG *atItem = (atCFG *)malloc(sizeof(atCFG));
           atItem->type = OVER_APPROXIMATE;
           atItem->iCallInst = iCallInst;
-          atItem->iCallID = getHashID(iCallInst);
+          atItem->iCallID = iCallID;
 
           atItem->iCallTarget = _pta->getValueFromNodeID(*pit);
           atItem->iCallTargetID = *pit;
@@ -795,7 +853,7 @@ void DDAPass::dumpoCFG() {
     errs() << OCFG << "\t" << item->iCallID << "\t" << item->iCallTargetID
            << "\t" << item->originID;
     if (item->originCTXInst) {
-      errs() << ":" << item->originCTXID;
+      errs() << "\t" << item->originCTXID;
     }
     errs() << "\n";
   }

@@ -4274,15 +4274,26 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
   }
   llvm::Instruction *CI = CS.getInstruction();
   if (CS.isIndirectCall()) {
-    llvm::outs() << "[OS-CFI] An inidirect call: " << *CI << "\n";
     llvm::Value *tempCalleePtr = CS.getCalledValue();
-    llvm::outs() << "[OS-CFI] Check ICall: " << *tempCalleePtr << "\n";
-    // llvm::IRBuilder<> rBuilder(CI);
     CI->eraseFromParent();
+    std::hash<std::string> hash_fn;
     while (1) {
       tempCalleePtr = tempCalleePtr->stripPointerCasts();
       if (isa<llvm::LoadInst>(tempCalleePtr)) {
         auto *loadCalleePtr = dyn_cast<llvm::LoadInst>(tempCalleePtr);
+
+        // create an identification for the ICT
+        std::string idCreator;
+        llvm::raw_string_ostream rso(idCreator);
+        loadCalleePtr->print(rso);
+        idCreator +=
+            ("[" + loadCalleePtr->getParent()->getParent()->getName().str() +
+             "]");
+        unsigned long id = hash_fn(idCreator) % 10000000;
+
+        llvm::Value *id_value = llvm::ConstantInt::get(IntTy, id, false);
+        llvm::Value *id_value_64 =
+            Builder.CreateIntCast(id_value, CGM.Int64Ty, false);
 
         // collect calleePtr address and value
         llvm::Value *calleePtrAddr =
@@ -4292,12 +4303,12 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
 
         // prepare to call reference monitor
         llvm::FunctionType *preftype = llvm::FunctionType::get(
-            CGM.VoidTy, {CGM.VoidPtrTy, CGM.Int64Ty}, false);
+            CGM.VoidTy, {CGM.Int64Ty, CGM.VoidPtrTy, CGM.Int64Ty}, false);
         llvm::Constant *rf =
             CGM.CreateRuntimeFunction(preftype, "pcall_reference_monitor");
 
         llvm::CallInst *rfcall =
-            Builder.CreateCall(rf, {calleePtrAddr, calleePtrVal});
+            Builder.CreateCall(rf, {id_value_64, calleePtrAddr, calleePtrVal});
         rfcall->setTailCallKind(llvm::CallInst::TailCallKind::TCK_NoTail);
         if (!InvokeDest) {
           CS = Builder.CreateCall(CalleePtr, IRCallArgs, BundleList);
@@ -4362,17 +4373,30 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
           }
         }
 
+        // create an identification for the ICT
+        std::string idCreator;
+        llvm::raw_string_ostream rso(idCreator);
+        phiCalleePtr->print(rso);
+        idCreator +=
+            ("[" + phiCalleePtr->getParent()->getParent()->getName().str() +
+             "]");
+        unsigned long id = hash_fn(idCreator) % 10000000;
+
+        llvm::Value *id_value = llvm::ConstantInt::get(IntTy, id, false);
+        llvm::Value *id_value_64 =
+            Builder.CreateIntCast(id_value, CGM.Int64Ty, false);
+
         llvm::Value *calleePtrVal =
             Builder.CreatePtrToInt(CalleePtr, CGM.Int64Ty);
 
         // prepare to call reference monitor
         llvm::FunctionType *preftype = llvm::FunctionType::get(
-            CGM.VoidTy, {CGM.VoidPtrTy, CGM.Int64Ty}, false);
+            CGM.VoidTy, {CGM.Int64Ty, CGM.VoidPtrTy, CGM.Int64Ty}, false);
         llvm::Constant *rf =
             CGM.CreateRuntimeFunction(preftype, "pcall_reference_monitor");
 
-        llvm::CallInst *rfcall =
-            Builder.CreateCall(rf, {phiCalleePtrAddr, calleePtrVal});
+        llvm::CallInst *rfcall = Builder.CreateCall(
+            rf, {id_value_64, phiCalleePtrAddr, calleePtrVal});
         rfcall->setTailCallKind(llvm::CallInst::TailCallKind::TCK_NoTail);
         if (!InvokeDest) {
           CS = Builder.CreateCall(CalleePtr, IRCallArgs, BundleList);

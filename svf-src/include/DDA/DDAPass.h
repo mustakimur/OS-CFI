@@ -76,6 +76,10 @@ typedef struct SUPAData {
 } supaCFG;
 
 // [OS-CFI]Function* can map a set of Instruction*
+typedef std::map<const llvm::Value *, unsigned long> ValToIDMap;
+typedef std::map<const llvm::Value *, unsigned long>::iterator ValToIDMapIt;
+typedef std::map<llvm::Instruction *, unsigned long> InstToIDMap;
+typedef std::map<llvm::Instruction *, unsigned long>::iterator InstToIDMapIt;
 typedef std::map<llvm::Function *, std::set<llvm::Instruction *>>
     FuncToInstSetMap;
 typedef std::map<llvm::Function *, std::set<llvm::Instruction *>>::iterator
@@ -87,8 +91,8 @@ typedef std::map<llvm::Function *, std::set<llvm::BasicBlock *>>::iterator
     FuncToBBSetMapIt;
 
 // [OS-CFI] BasicBlock* can map to an unsigned long
-typedef std::map<llvm::BasicBlock *, unsigned long> BBToHashMap;
-typedef std::map<llvm::BasicBlock *, unsigned long>::iterator BBToHashMapIt;
+typedef std::map<llvm::BasicBlock *, unsigned long> BBToIDMap;
+typedef std::map<llvm::BasicBlock *, unsigned long>::iterator BBToIDMapIt;
 
 // [OS-CFI] typedef container for CFGs
 typedef std::vector<supaCFG *> SUPACFGList;
@@ -112,8 +116,10 @@ private:
   FuncSet setAddrFunc;     // [OS-CFI] Set of ADDR Functions
 
   FuncToInstSetMap mapFnCSite; // [OS-CFI] ToDo
-  BBToHashMap mapBBHID;        // [OS-CFI] ToDo
+  InstToIDMap mapInstID;       // [OS-CFI] ToDo
+  BBToIDMap mapBBID;           // [OS-CFI] ToDo
   FuncToBBSetMap mapFnBB;      // [OS-CFI] ToDo
+  ValToIDMap mapValID;         // [OS-CFI] ToDo
 
 public:
   /// Pass ID
@@ -164,8 +170,9 @@ private:
   void dumpoCFG();    // [OS-CFI] print OS-CFG
   void dumpcCFG();    // [OS-CFI] print CS-CFG
   void dumpatCFG();   // [OS-CFI] print ADDRTY-CFG
-  void insertLabelAfterCall(const llvm::Instruction *callInst); // [OS-CFI] ToDo
-  void insertIndirectBranch();                                  // [OS-CFI] ToDo
+  void labelForCSite(const llvm::Instruction *, unsigned long); // [OS-CFI] ToDo
+  void createLabelForCS();                                      // [OS-CFI] ToDo
+  void createLabelForValue(SVFModule);                       // [OS-CFI] ToDo
   bool isTypeMatch(const llvm::Instruction *,
                    const llvm::Value *); // [OS-CFI] test the type match between
                                          // sink and source
