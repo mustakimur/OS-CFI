@@ -1,3 +1,4 @@
+#include "llvm/IR/CallSite.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/Pass.h"
@@ -358,6 +359,9 @@ public:
     GlobalVariable *gCFG_lenPOS = M.getGlobalVariable("PCALL_OSCFI_C");
     gCFG_lenPOS->setInitializer(cfgLenPOS);
 
+    Function *P_REF = M.getFunction("pcall_reference_monitor");
+    Function *V_REF = M.getFunction("vcall_reference_monitor");
+
     Function *OSCFI_P_REF = M.getFunction("oscfi_pcall_reference_monitor");
     Function *OSCFI_V_REF = M.getFunction("oscfi_vcall_reference_monitor");
 
@@ -376,8 +380,8 @@ public:
           if (isa<CallInst>(inst)) {
             CallInst *call = dyn_cast<CallInst>(inst);
             if (call->getCalledFunction() &&
-                call->getCalledFunction()->getName() ==
-                    "cfilb_reference_monitor") {
+                (call->getCalledFunction() == P_REF ||
+                 call->getCalledFunction() == V_REF)) {
               Value *idValue = call->getArgOperand(0);
               if (isa<ConstantInt>(idValue)) {
                 ConstantInt *cint = dyn_cast<ConstantInt>(idValue);

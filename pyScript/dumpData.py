@@ -1,17 +1,46 @@
 import sys
+import r2pipe
+
+tagLabelMap = dict()
+
+
+def preprocess():
+    bFile = str(sys.argv[1]) + str(sys.argv[2])
+    r2 = r2pipe.open(bFile)
+    r2.cmd("aaa")
+    res = []
+    for x in (r2.cmd("afl").split("\n")):
+        if (len(x) > 0):
+            res.append(int((x.split(' ')[0]), 16))
+
+    for k, v in tagLabelMap.iteritems():
+        r2.cmd("s " + hex(v))
+        r2.cmd("sf.")
+
+        if (not v in res):
+            print(hex(v))
+            item = r2.cmd("/c jmp " + hex(v))
+            if (len(item) > 0):
+                tagLabelMap[k] = int(item.strip().split(' ')[0], 16)
+            else:
+                item = r2.cmd("/c jne " + hex(v))
+                if (len(item) > 0):
+                    item = r2.cmd("pd -1")
+                    tagLabelMap[k] = int(item.strip().split(' ')[0], 16)
+
+    r2.quit()
 
 
 def main():
-    tagLabelMap = dict()
     osCFG = dict()
     csCFG = dict()
     ciCFG = dict()
 
-    bFile = str(sys.argv[1]) + "dump_table"
+    bFile = str(sys.argv[1]) + "dump_table.bin"
     with open(bFile, 'r') as fp:
         rLine = fp.readline()
         while rLine:
-            if (len(rLine.strip().split(' ')) == 7):
+            if (rLine[0] == ' ' and len(rLine.strip().split(' ')) >= 7):
                 items = rLine.strip().split(' ')
                 tag = (str(items[2][::-1]) + str(items[1][::-1]))
                 tag = ''.join(
@@ -23,7 +52,9 @@ def main():
             rLine = fp.readline()
     fp.close()
 
-    eFile = str(sys.argv[1]) + "errs.txt"
+    preprocess()
+
+    eFile = str(sys.argv[1]) + "stats.bin"
     with open(eFile, 'r') as fp:
         eLine = fp.readline()
         while eLine:
@@ -102,8 +133,6 @@ def main():
         elif (csChoice[k] <= osChoice[k] and csChoice[k] < ciChoice[k]):
             fChoice[k] = 3
 
-    print(fChoice)
-
     osFile = str(sys.argv[1]) + "osCFG.bin"
     # cpoint, origin, originctx, target
     fw = open(osFile, "w")
@@ -127,15 +156,15 @@ def main():
             ctx = ''
             c = 0
             for ii in k:
-                if(c > 5):
+                if (c > 5):
                     break
                 ctx += (str(ii) + '\t')
-                c+=1
+                c += 1
 
             for item in v:
-                if(len(k) == 3):
+                if (len(k) == 3):
                     fw1.write(ctx + '\t' + str(item) + '\n')
-                elif(len(k) == 4):
+                elif (len(k) == 4):
                     fw2.write(ctx + '\t' + str(item) + '\n')
                 else:
                     fw3.write(ctx + '\t' + str(item) + '\n')

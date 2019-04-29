@@ -330,7 +330,7 @@ oscfi_pcall_reference_monitor_d1(unsigned long ref_id, unsigned long ptr_addr,
   if (PCALL_HASH_TABLE[hash_key] != NULL) {
     pcallItem *temp = PCALL_HASH_TABLE[hash_key];
     while (temp != NULL) {
-      if (temp->depth == 0 && temp->ref_id == ref_id &&
+      if (temp->depth == 1 && temp->ref_id == ref_id &&
           temp->target == ptr_val && temp->call_site[0] == site1) {
         stats[5]++;
         return;
@@ -339,11 +339,13 @@ oscfi_pcall_reference_monitor_d1(unsigned long ref_id, unsigned long ptr_addr,
     }
   }
 
-  fprintf(stderr,
+  fprintf(stderr, "%lu, %lx, %lx\n", ref_id, ptr_val, site1);
+
+  /* fprintf(stderr,
           "[OSCFI-LOG] Failed validation for <pcall call-site sensitivity "
           "depth 1> {%lu "
           "=> %lx}\n",
-          ref_id, ptr_val);
+          ref_id, ptr_val); */
 }
 
 void __attribute__((__used__))
@@ -357,7 +359,7 @@ oscfi_pcall_reference_monitor_d2(unsigned long ref_id, unsigned long ptr_addr,
   if (PCALL_HASH_TABLE[hash_key] != NULL) {
     pcallItem *temp = PCALL_HASH_TABLE[hash_key];
     while (temp != NULL) {
-      if (temp->depth == 0 && temp->ref_id == ref_id &&
+      if (temp->depth == 2 && temp->ref_id == ref_id &&
           temp->target == ptr_val && temp->call_site[0] == site1 &&
           temp->call_site[1] == site2) {
         stats[6]++;
@@ -386,7 +388,7 @@ oscfi_pcall_reference_monitor_d3(unsigned long ref_id, unsigned long ptr_addr,
   if (PCALL_HASH_TABLE[hash_key] != NULL) {
     pcallItem *temp = PCALL_HASH_TABLE[hash_key];
     while (temp != NULL) {
-      if (temp->depth == 0 && temp->ref_id == ref_id &&
+      if (temp->depth == 3 && temp->ref_id == ref_id &&
           temp->target == ptr_val && temp->call_site[0] == site1 &&
           temp->call_site[1] == site2 && temp->call_site[2] == site3) {
         stats[7]++;
@@ -400,26 +402,6 @@ oscfi_pcall_reference_monitor_d3(unsigned long ref_id, unsigned long ptr_addr,
           "[OSCFI-LOG] Failed validation for <pcall call-site sensitivity "
           "depth 3> {%lu "
           "=> %lx}\n",
-          ref_id, ptr_val);
-}
-
-void __attribute__((__used__))
-static_pcall_reference_monitor(unsigned long ref_id, unsigned long ptr_addr,
-                               unsigned long ptr_val) {
-  unsigned long hash_key = (ref_id ^ ptr_val) % HASH_KEY_RANGE;
-  if (STATIC_HASH_TABLE[hash_key] != NULL) {
-    staticItem *temp = STATIC_HASH_TABLE[hash_key];
-    while (temp != NULL) {
-      if (temp->ref_id == ref_id && temp->target == ptr_val) {
-        stats[8]++;
-        return;
-      }
-      temp = temp->next;
-    }
-  }
-
-  fprintf(stderr,
-          "[OSCFI-LOG] Failed validation for <pcall supa fixer> {%lu => %lx}\n",
           ref_id, ptr_val);
 }
 
@@ -457,17 +439,17 @@ void __attribute__((__used__)) oscfi_init() {
     pcall_D0_hash_insert((unsigned long)PCALL_D0[i],
                          (unsigned long)PCALL_D0[i + 1]);
   }
-  for (i = 0; i < PCALL_D0_C; i += 3) {
+  for (i = 0; i < PCALL_D1_C; i += 3) {
     pcall_D1_hash_insert((unsigned long)PCALL_D1[i],
                          (unsigned long)PCALL_D1[i + 1],
                          (unsigned long)PCALL_D1[i + 2]);
   }
-  for (i = 0; i < PCALL_D0_C; i += 4) {
+  for (i = 0; i < PCALL_D2_C; i += 4) {
     pcall_D2_hash_insert(
         (unsigned long)PCALL_D2[i], (unsigned long)PCALL_D2[i + 1],
         (unsigned long)PCALL_D2[i + 2], (unsigned long)PCALL_D2[i + 3]);
   }
-  for (i = 0; i < PCALL_D0_C; i += 5) {
+  for (i = 0; i < PCALL_D3_C; i += 5) {
     pcall_D3_hash_insert(
         (unsigned long)PCALL_D3[i], (unsigned long)PCALL_D3[i + 1],
         (unsigned long)PCALL_D3[i + 2], (unsigned long)PCALL_D3[i + 3],

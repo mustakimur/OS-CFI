@@ -1845,18 +1845,23 @@ CGCallee ItaniumCXXABI::getVirtualFunctionPointer(CodeGenFunction &CGF,
     llvm::Value *vTableAddr = CGF.Builder.CreatePtrToInt(VTable, CGM.Int64Ty);
     llvm::Value *thisPtrAddr =
         CGF.Builder.CreateBitCast(This.getPointer(), CGM.VoidPtrTy);
+    llvm::Value *thisPtrAddrVal =
+        CGF.Builder.CreatePtrToInt(thisPtrAddr, CGM.Int64Ty);
+
     llvm::Value *calleePtrVal =
         CGF.Builder.CreateBitCast(VFuncLoad, CGM.VoidPtrTy);
+    llvm::Value *calleePtrValInt =
+        CGF.Builder.CreatePtrToInt(calleePtrVal, CGM.Int64Ty);
 
     // prepare to call reference monitor
     llvm::FunctionType *vreftype = llvm::FunctionType::get(
-        CGM.VoidTy, {CGM.Int64Ty, CGM.VoidPtrTy, CGM.Int64Ty, CGM.VoidPtrTy},
+        CGM.VoidTy, {CGM.Int64Ty, CGM.Int64Ty, CGM.Int64Ty, CGM.Int64Ty},
         false);
     llvm::Constant *rf =
         CGM.CreateRuntimeFunction(vreftype, "vcall_reference_monitor");
 
     llvm::CallInst *rfcall = CGF.Builder.CreateCall(
-        rf, {id_value_64, thisPtrAddr, vTableAddr, calleePtrVal});
+        rf, {id_value_64, thisPtrAddrVal, vTableAddr, calleePtrValInt});
     rfcall->setTailCallKind(llvm::CallInst::TailCallKind::TCK_NoTail);
     /*
      * OS-CFI clang codegen modification to instrument reference monitor for

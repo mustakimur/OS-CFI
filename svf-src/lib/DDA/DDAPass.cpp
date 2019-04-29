@@ -72,8 +72,6 @@ unsigned long DDAPass::getHashID(const Instruction *inst) {
   raw_string_ostream rso(str);
   inst->print(rso);
   str += ("[" + inst->getParent()->getParent()->getName().str() + "]");
-  llvm::outs() << "[OS-CFI] map00 " << *inst << " => "
-               << (hash_fn(str) % HASH_ID_RANGE) << "\n";
   return (hash_fn(str) % HASH_ID_RANGE);
 }
 
@@ -402,24 +400,10 @@ void DDAPass::createLabelForCS() {
            i != ie; ++i) {
         Instruction &inst = *i;
         if (fit->second.find(&inst) != fit->second.end()) {
-          // create a new basic block
-          BasicBlock *nBB = BasicBlock::Create(FN->getContext(), "", FN, &iBB);
-          iBB.replaceSuccessorsPhiUsesWith(nBB);
+          llvm::BasicBlock *nBB = iBB.splitBasicBlock(
+              inst.getNextNonDebugInstruction(), "oscfg_label");
           mapFnBB[FN].insert(nBB);
-
           mapBBID[nBB] = mapInstID[&inst];
-          llvm::outs() << "[OS-CFI] map01 " << inst << " => "
-                       << mapInstID[&inst] << "\n";
-
-          // create branch instruction to new basic block
-          IRBuilder<> iBuilder(&iBB);
-          BranchInst *iBr = iBuilder.CreateBr(nBB);
-
-          // move the branch instruction before the next instruction of call
-          // instruction
-          iBr->moveAfter(&inst);
-
-          nBB->moveAfter(&iBB);
         }
       }
     }

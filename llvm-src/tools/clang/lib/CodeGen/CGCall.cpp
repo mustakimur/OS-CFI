@@ -4298,17 +4298,19 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
         // collect calleePtr address and value
         llvm::Value *calleePtrAddr =
             EmitCastToVoidPtr(loadCalleePtr->getPointerOperand());
+        llvm::Value *calleePtrAddrVal =
+            Builder.CreatePtrToInt(calleePtrAddr, CGM.Int64Ty);
         llvm::Value *calleePtrVal =
             Builder.CreatePtrToInt(CalleePtr, CGM.Int64Ty);
 
         // prepare to call reference monitor
         llvm::FunctionType *preftype = llvm::FunctionType::get(
-            CGM.VoidTy, {CGM.Int64Ty, CGM.VoidPtrTy, CGM.Int64Ty}, false);
+            CGM.VoidTy, {CGM.Int64Ty, CGM.Int64Ty, CGM.Int64Ty}, false);
         llvm::Constant *rf =
             CGM.CreateRuntimeFunction(preftype, "pcall_reference_monitor");
 
-        llvm::CallInst *rfcall =
-            Builder.CreateCall(rf, {id_value_64, calleePtrAddr, calleePtrVal});
+        llvm::CallInst *rfcall = Builder.CreateCall(
+            rf, {id_value_64, calleePtrAddrVal, calleePtrVal});
         rfcall->setTailCallKind(llvm::CallInst::TailCallKind::TCK_NoTail);
         if (!InvokeDest) {
           CS = Builder.CreateCall(CalleePtr, IRCallArgs, BundleList);
@@ -4386,17 +4388,20 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
         llvm::Value *id_value_64 =
             Builder.CreateIntCast(id_value, CGM.Int64Ty, false);
 
+        llvm::Value *phiCalleePtrAddrVal =
+            Builder.CreatePtrToInt(phiCalleePtrAddr, CGM.Int64Ty);
+
         llvm::Value *calleePtrVal =
             Builder.CreatePtrToInt(CalleePtr, CGM.Int64Ty);
 
         // prepare to call reference monitor
         llvm::FunctionType *preftype = llvm::FunctionType::get(
-            CGM.VoidTy, {CGM.Int64Ty, CGM.VoidPtrTy, CGM.Int64Ty}, false);
+            CGM.VoidTy, {CGM.Int64Ty, CGM.Int64Ty, CGM.Int64Ty}, false);
         llvm::Constant *rf =
             CGM.CreateRuntimeFunction(preftype, "pcall_reference_monitor");
 
         llvm::CallInst *rfcall = Builder.CreateCall(
-            rf, {id_value_64, phiCalleePtrAddr, calleePtrVal});
+            rf, {id_value_64, phiCalleePtrAddrVal, calleePtrVal});
         rfcall->setTailCallKind(llvm::CallInst::TailCallKind::TCK_NoTail);
         if (!InvokeDest) {
           CS = Builder.CreateCall(CalleePtr, IRCallArgs, BundleList);

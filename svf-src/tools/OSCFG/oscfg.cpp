@@ -53,7 +53,7 @@ int main(int argc, char **argv) {
   DDAPass *dda = new DDAPass();
   dda->runOnModule(svfModule);
 
-  svfModule.dumpModulesToFile(".oscfg");
+  svfModule.dumpModulesToFile(".oscfg.bc");
 
   return 0;
 }
