@@ -57,6 +57,7 @@ void vcall_reference_monitor(unsigned long, unsigned long, unsigned long,
 // (ref_id, pointer_addr, pointer_val)
 void oscfi_pcall_reference_monitor(unsigned long, unsigned long, unsigned long);
 // (ref_id, pointer_addr, pointer_val)
+void oscfi_pcall_ctx_reference_monitor(unsigned long, unsigned long, unsigned long);
 void oscfi_pcall_reference_monitor_d0(unsigned long, unsigned long,
                                       unsigned long);
 // (ref_id, pointer_addr, pointer_val)

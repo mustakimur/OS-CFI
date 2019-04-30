@@ -24,17 +24,18 @@ typedef std::set<ctxToTargetPair> ctxToTargetSet;
 typedef std::set<ctxToTargetPair>::iterator ctxToTargetSetIt;
 typedef std::map<unsigned long, ctxToTargetSet> pointToECMap;
 typedef std::map<unsigned long, ctxToTargetSet>::iterator pointToECMapIt;
-typedef std::map<unsigned long, int> pointToDepth;
-typedef std::map<unsigned long, int>::iterator pointToDepthIt;
+typedef std::map<unsigned long, int> pointToType;
+typedef std::map<unsigned long, int>::iterator pointToTypeIt;
 
 typedef enum TARGET_TYPE {
   V_OS = 1,
   V_CI = 2,
-  P_OS = 3,
-  P_CS1 = 4,
-  P_CS2 = 5,
-  P_CS3 = 6,
-  P_CI = 7
+  P_OS_CTX = 3,
+  P_OS = 4,
+  P_CS1 = 5,
+  P_CS2 = 6,
+  P_CS3 = 7,
+  P_CI = 8
 } targetType;
 
 class INSTCFG : public ModulePass {
@@ -139,10 +140,13 @@ public:
         contextList ctx;
         ctx.push_back(s1);
         ctx.push_back(s2);
+        originList.push_back(s1);
         ctxToTargetPair target;
         target = std::make_pair(t, ctx);
         mapPEC[p].insert(target);
-        if (ty == 1)
+        if (ty == 1 && s2 != 0)
+          mapPD[p] = P_OS_CTX;
+        else if (ty == 1 && s2 == 0)
           mapPD[p] = P_OS;
         else
           mapPD[p] = V_OS;
@@ -359,9 +363,13 @@ public:
     GlobalVariable *gCFG_lenPOS = M.getGlobalVariable("PCALL_OSCFI_C");
     gCFG_lenPOS->setInitializer(cfgLenPOS);
 
+    Function *U_MPX = M.getFunction("update_mpx_table");
+
     Function *P_REF = M.getFunction("pcall_reference_monitor");
     Function *V_REF = M.getFunction("vcall_reference_monitor");
 
+    Function *OSCFI_P_CTX_REF =
+        M.getFunction("oscfi_pcall_ctx_reference_monitor");
     Function *OSCFI_P_REF = M.getFunction("oscfi_pcall_reference_monitor");
     Function *OSCFI_V_REF = M.getFunction("oscfi_vcall_reference_monitor");
 
@@ -372,7 +380,8 @@ public:
     Function *CS_D2_REF = M.getFunction("oscfi_pcall_reference_monitor_d2");
     Function *CS_D3_REF = M.getFunction("oscfi_pcall_reference_monitor_d3");
 
-    unsigned long callID;
+    unsigned long callID, originID;
+    IntegerType *int64Ty = Type::getInt64Ty(M.getContext());
     for (Function &Fn : M) {
       for (BasicBlock &BB : Fn) {
         for (Instruction &Inst : BB) {
@@ -393,6 +402,8 @@ public:
                     call->setCalledFunction(CI_P_REF);
                   } else if (d == V_CI) {
                     call->setCalledFunction(CI_V_REF);
+                  } else if (d == P_OS_CTX) {
+                    call->setCalledFunction(OSCFI_P_CTX_REF);
                   } else if (d == P_OS) {
                     call->setCalledFunction(OSCFI_P_REF);
                   } else if (d == V_OS) {
@@ -406,6 +417,18 @@ public:
                   }
                 }
               }
+            } else if (call->getCalledFunction() &&
+                       call->getCalledFunction() == U_MPX) {
+              Value *idValue = call->getArgOperand(2);
+              if (isa<ConstantInt>(idValue)) {
+                ConstantInt *cint = dyn_cast<ConstantInt>(idValue);
+                originID = cint->getZExtValue();
+                if (find(originList.begin(), originList.end(), originID) ==
+                    originList.end()) {
+                  Constant *rm_id = ConstantInt::get(int64Ty, 0, false);
+                  call->setArgOperand(2, rm_id);
+                }
+              }
             }
           }
         }
@@ -417,7 +440,8 @@ public:
 
 private:
   pointToECMap mapPEC;
-  pointToDepth mapPD;
+  pointToType mapPD;
+  contextList originList;
 };
 
 char INSTCFG::ID = 0;

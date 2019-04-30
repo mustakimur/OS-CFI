@@ -18,7 +18,6 @@ def preprocess():
         r2.cmd("sf.")
 
         if (not v in res):
-            print(hex(v))
             item = r2.cmd("/c jmp " + hex(v))
             if (len(item) > 0):
                 tagLabelMap[k] = int(item.strip().split(' ')[0], 16)

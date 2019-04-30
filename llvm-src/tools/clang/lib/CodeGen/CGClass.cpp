@@ -2447,14 +2447,15 @@ void CodeGenFunction::entryObjOrigin(Address thisPtr, llvm::Value *vTable) {
     llvm::Value *vTableAddr = Builder.CreatePtrToInt(vTable, CGM.Int64Ty);
     llvm::Value *thisPtrAddr =
         Builder.CreateBitCast(thisPtr.getPointer(), CGM.VoidPtrTy);
+    llvm::Value *thisPtrAddrVal = Builder.CreatePtrToInt(thisPtrAddr, CGM.Int64Ty);
 
     llvm::FunctionType *uptype = llvm::FunctionType::get(
-        CGM.VoidTy, {CGM.VoidPtrTy, CGM.Int64Ty, CGM.Int64Ty, CGM.Int64Ty},
+        CGM.VoidTy, {CGM.Int64Ty, CGM.Int64Ty, CGM.Int64Ty, CGM.Int64Ty},
         false);
     llvm::Constant *up = CGM.CreateRuntimeFunction(uptype, "update_mpx_table");
 
     llvm::CallInst *upcall = Builder.CreateCall(
-        up, {thisPtrAddr, vTableAddr, objOrigin_64, objOrigin_64});
+        up, {thisPtrAddrVal, vTableAddr, objOrigin_64, objOrigin_64});
     upcall->setTailCallKind(llvm::CallInst::TailCallKind::TCK_NoTail);
 
     // inactive path will avoid the update to mpx table

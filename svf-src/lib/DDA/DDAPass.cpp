@@ -169,7 +169,7 @@ void DDAPass::runPointerAnalysis(SVFModule module, u32_t kind) {
       printQueryPTS();
 
     // [OS-CFI] SUPA completes process and it is time to compute our CFGs
-    computeCFG();
+    computeCFG(module);
 
     // [OS-CFI] Process the labeling
     createLabelForCS();
@@ -561,7 +561,7 @@ void DDAPass::fillEmptyPointsToSet(const Instruction *iCallInst) {
 }
 
 // [OS-CFI] computeCFG(): prepares the CFG listings from SUPA analysis
-void DDAPass::computeCFG() {
+void DDAPass::computeCFG(SVFModule M) {
   // get candidate queries
   const NodeSet &candidates = _client->getCandidateQueries();
   if (DEBUG_SOLVER) {
@@ -609,9 +609,14 @@ void DDAPass::computeCFG() {
       continue;
     }
 
+    Function *P_REF = M.getFunction("pcall_reference_monitor");
+    Function *V_REF = M.getFunction("vcall_reference_monitor");
+
     if (isa<CallInst>(rCallInst)) {
       CallInst *call = dyn_cast<CallInst>(rCallInst);
-      if (call->getNumArgOperands() == 3 &&
+      if (call->getCalledFunction() &&
+          (call->getCalledFunction() == P_REF ||
+           call->getCalledFunction() == V_REF) &&
           isa<ConstantInt>(call->getOperand(0))) {
         ConstantInt *cint = dyn_cast<ConstantInt>(rCallInst->getOperand(0));
         iCallID = cint->getZExtValue();

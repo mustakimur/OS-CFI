@@ -159,6 +159,7 @@ llvm::StoreInst *CodeGenFunction::EmitStoreToMetadata(llvm::Value *Val,
     // gather pointer address and pointer value
     llvm::Value *ptrAddr =
         Builder.CreateBitCast(Addr.getPointer(), CGM.VoidPtrTy);
+    llvm::Value *ptrAddrVal = Builder.CreatePtrToInt(ptrAddr, CGM.Int64Ty);
     llvm::Value *ptrValue;
     if (extractValue == NULL) {
       ptrValue = Builder.CreatePtrToInt(Val, CGM.Int64Ty);
@@ -180,11 +181,11 @@ llvm::StoreInst *CodeGenFunction::EmitStoreToMetadata(llvm::Value *Val,
     // active will update mpx table
     EmitBlock(activePath);
     llvm::FunctionType *uptype = llvm::FunctionType::get(
-        CGM.VoidTy, {CGM.VoidPtrTy, CGM.Int64Ty, CGM.Int64Ty, CGM.Int64Ty},
+        CGM.VoidTy, {CGM.Int64Ty, CGM.Int64Ty, CGM.Int64Ty, CGM.Int64Ty},
         false);
     llvm::Constant *up = CGM.CreateRuntimeFunction(uptype, "update_mpx_table");
     llvm::CallInst *upcall =
-        Builder.CreateCall(up, {ptrAddr, ptrValue, p_origin_64, ctx_val_64});
+        Builder.CreateCall(up, {ptrAddrVal, ptrValue, p_origin_64, ctx_val_64});
     upcall->setTailCallKind(llvm::CallInst::TailCallKind::TCK_NoTail);
 
     // inactive path will avoid the update to mpx table

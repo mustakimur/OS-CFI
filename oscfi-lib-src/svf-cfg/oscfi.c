@@ -247,13 +247,13 @@ oscfi_vcall_reference_monitor(unsigned long ref_id, unsigned long vptr_addr,
   }
 
   unsigned long long hash_key =
-      ((ref_id ^ vtable_addr ^ entry.origin ^ entry.origin) % HASH_KEY_RANGE);
+      ((ref_id ^ vtable_addr ^ entry.origin) % HASH_KEY_RANGE);
 
   if (OSCFI_HASH_TABLE[hash_key] != NULL) {
     oscfiItem *temp = OSCFI_HASH_TABLE[hash_key];
     while (temp != NULL) {
       if (temp->ref_id == ref_id && temp->target == vtable_addr &&
-          temp->origin == entry.origin && temp->originCtx == entry.originCtx) {
+          temp->origin == entry.origin) {
         stats[2]++;
         return;
       }
@@ -263,13 +263,13 @@ oscfi_vcall_reference_monitor(unsigned long ref_id, unsigned long vptr_addr,
 
   fprintf(stderr,
           "[OSCFI-LOG] Failed validation for <vcall origin sensitivity> {%lu "
-          "=> %lx}\n",
-          ref_id, target);
+          "=> %lx[%lu]}\n",
+          ref_id, target, entry.origin);
 }
 
 void __attribute__((__used__))
-oscfi_pcall_reference_monitor(unsigned long ref_id, unsigned long ptr_addr,
-                              unsigned long ptr_val) {
+oscfi_pcall_ctx_reference_monitor(unsigned long ref_id, unsigned long ptr_addr,
+                                  unsigned long ptr_val) {
   mEntry entry = get_entry_mpx_table(ptr_addr, ptr_val);
 
   if (entry.origin == 0) {
@@ -277,7 +277,7 @@ oscfi_pcall_reference_monitor(unsigned long ref_id, unsigned long ptr_addr,
   }
 
   unsigned long long hash_key =
-      ((ref_id ^ ptr_val ^ entry.origin ^ entry.origin) % HASH_KEY_RANGE);
+      ((ref_id ^ ptr_val ^ entry.origin ^ entry.originCtx) % HASH_KEY_RANGE);
 
   if (OSCFI_HASH_TABLE[hash_key] != NULL) {
     oscfiItem *temp = OSCFI_HASH_TABLE[hash_key];
@@ -292,9 +292,41 @@ oscfi_pcall_reference_monitor(unsigned long ref_id, unsigned long ptr_addr,
   }
 
   fprintf(stderr,
-          "[OSCFI-LOG] Failed validation for <pcall origin sensitivity> {%lu "
-          "=> %lx}\n",
-          ref_id, ptr_val);
+          "[OSCFI-LOG] Failed validation for <pcall origin with CTX "
+          "sensitivity> {%lu "
+          "=> %lx} [%lu, %lx]\n",
+          ref_id, ptr_val, entry.origin, entry.originCtx);
+}
+
+void __attribute__((__used__))
+oscfi_pcall_reference_monitor(unsigned long ref_id, unsigned long ptr_addr,
+                              unsigned long ptr_val) {
+  mEntry entry = get_entry_mpx_table(ptr_addr, ptr_val);
+
+  if (entry.origin == 0) {
+    fprintf(stderr, "[OSCFI-LOG] Something wrong with mpx metadata table\n");
+  }
+
+  unsigned long long hash_key =
+      ((ref_id ^ ptr_val ^ entry.origin) % HASH_KEY_RANGE);
+
+  if (OSCFI_HASH_TABLE[hash_key] != NULL) {
+    oscfiItem *temp = OSCFI_HASH_TABLE[hash_key];
+    while (temp != NULL) {
+      if (temp->ref_id == ref_id && temp->target == ptr_val &&
+          temp->origin == entry.origin && temp->originCtx == 0) {
+        stats[3]++;
+        return;
+      }
+      temp = temp->next;
+    }
+  }
+
+  fprintf(stderr,
+          "[OSCFI-LOG] Failed validation for <pcall origin w/o CTX "
+          "sensitivity> {%lu "
+          "=> %lx} [%lu]\n",
+          ref_id, ptr_val, entry.origin);
 }
 
 void __attribute__((__used__))
@@ -462,9 +494,9 @@ void __attribute__((__used__)) oscfi_init() {
         (unsigned long)PCALL_OSCFI[i + 2], (unsigned long)PCALL_OSCFI[i + 3]);
   }
   for (i = 0; i < VCALL_OSCFI_C; i += 4) {
-    oscfi_hash_insert(
-        (unsigned long)VCALL_OSCFI[i], (unsigned long)VCALL_OSCFI[i + 1],
-        (unsigned long)VCALL_OSCFI[i + 2], (unsigned long)VCALL_OSCFI[i + 3]);
+    oscfi_hash_insert((unsigned long)VCALL_OSCFI[i],
+                      (unsigned long)VCALL_OSCFI[i + 1],
+                      (unsigned long)VCALL_OSCFI[i + 2], 0);
   }
 }
 

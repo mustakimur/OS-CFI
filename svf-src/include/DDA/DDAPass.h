@@ -166,7 +166,7 @@ public:
 private:
   unsigned long getHashID(const llvm::Instruction *); // [OS-CFI] return unique
                                                       // id for an instruction
-  void computeCFG();  // [OS-CFI] fill out CFG containers
+  void computeCFG(SVFModule);  // [OS-CFI] fill out CFG containers
   void dumpSUPACFG(); // [OS-CFI] print SUPA CI-CFG
   void dumpoCFG();    // [OS-CFI] print OS-CFG
   void dumpcCFG();    // [OS-CFI] print CS-CFG
