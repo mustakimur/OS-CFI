@@ -1,12 +1,12 @@
-CC=~/OS-CFI/llvm-obj/bin/clang
-CXX=~/OS-CFI/llvm-obj/bin/clang++
-DIS=~/OS-CFI/llvm-obj/bin/llvm-dis
-OPT=~/OS-CFI/llvm-obj/bin/opt
-OSCFG=~/OS-CFI/svf-src/Debug-build/bin/oscfg
-PYSCRIPT=~/OS-CFI/pyScript/dumpData.py
-LLC=~/OS-CFI/llvm-obj/bin/llc
-CFG=~/OS-CFI/llvm-obj/lib/LLVMInstCFG.so
-OSCFI_LIB=~/OS-CFI/oscfi-lib-src/svf-cfg/
+CC=$OSCFI_PATH/llvm-obj/bin/clang
+CXX=$OSCFI_PATH/llvm-obj/bin/clang++
+DIS=$OSCFI_PATH/llvm-obj/bin/llvm-dis
+OPT=$OSCFI_PATH/llvm-obj/bin/opt
+OSCFG=$OSCFI_PATH/svf-src/Debug-build/bin/oscfg
+PYSCRIPT=$OSCFI_PATH/pyScript/dumpData.py
+LLC=$OSCFI_PATH/llvm-obj/bin/llc
+CFG=$OSCFI_PATH/llvm-obj/lib/LLVMInstCFG.so
+OSCFI_LIB=$OSCFI_PATH/oscfi-lib-src/svf-cfg/
 
 echo "Please, modify the Makefile.spec according to the README.md ..."
 read -p "Press any key to continue ..."
