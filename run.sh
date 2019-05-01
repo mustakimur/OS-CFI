@@ -34,7 +34,7 @@ rm *.ll *.bc *.bin
 make
 
 echo "Static points-to analysis CFG generation ..."
-$OSCFG -cxt -query=funptr -maxcxt=10 -flowbg=10000 -cxtbg=100000 -cpts -print-query-pts "$sourceDirectory""/""$progName"".0.4.opt.bc" > "$sourceDirectory""/outs.txt" 2> "$sourceDirectory""/stats.bin"
+$OSCFG -svfmain -cxt -query=funptr -maxcxt=10 -flowbg=10000 -cxtbg=100000 -cpts -print-query-pts "$sourceDirectory""/""$progName"".0.4.opt.bc" > "$sourceDirectory""/outs.txt" 2> "$sourceDirectory""/stats.bin"
 $DIS "$progName"".0.4.opt.oscfg.bc"
 
 echo "Generating the binary ..."
@@ -68,5 +68,4 @@ $CXX -mmpx -pthread -O0 "$progName"".0.4.opt.oscfg.cfg.o" -o "$progName""_exec"
 
 cp "$progName""_exec" run/
 
-cd run/
-./"$progName""_exec" nph3.hmm swiss41
+echo "Process complete. The secure binary is the run directory under project source directory."
