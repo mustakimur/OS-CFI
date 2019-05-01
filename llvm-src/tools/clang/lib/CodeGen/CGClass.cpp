@@ -2424,7 +2424,7 @@ void CodeGenFunction::InitializeVTablePointer(const VPtr &Vptr) {
   entryObjOrigin(thisPtr, VTableAddressPoint);
 }
 
-// create an entry in the MPX table for the newly created object
+// OS-CFI create an entry in the MPX table for the newly created object
 void CodeGenFunction::entryObjOrigin(Address thisPtr, llvm::Value *vTable) {
   if (LoadObjOrigin()) {
     llvm::Value *objOrigin = LoadObjOrigin();

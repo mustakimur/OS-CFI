@@ -255,9 +255,9 @@ public:
     gCFG_lenPCI->setInitializer(cfgLenPCI);
 
     // V_CI
-    ArrayRef<Constant *> blockArrayVCI(list_P_CI);
+    ArrayRef<Constant *> blockArrayVCI(list_V_CI);
     // create the constant type and array
-    ArrayType *pArrTyVCI = ArrayType::get(int32PtTy, list_P_CI.size());
+    ArrayType *pArrTyVCI = ArrayType::get(int32PtTy, list_V_CI.size());
     Constant *blockItemsVCI = ConstantArray::get(pArrTyVCI, blockArrayVCI);
 
     GlobalVariable *gCFG_oldVCI = M.getGlobalVariable("STATIC_TABLE");
@@ -269,7 +269,7 @@ public:
 
     replaceGLBUsage(gvar_cfg_dataVCI, gCFG_oldVCI);
 
-    Constant *cfgLenVCI = ConstantInt::get(int32Ty, list_P_CI.size(), false);
+    Constant *cfgLenVCI = ConstantInt::get(int32Ty, list_V_CI.size(), false);
     GlobalVariable *gCFG_lenVCI = M.getGlobalVariable("STATIC_TABLE_LENGTH");
     gCFG_lenVCI->setInitializer(cfgLenVCI);
 

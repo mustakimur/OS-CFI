@@ -538,6 +538,8 @@ bool DDAPass::isTypeMatch(const Instruction *sink, const Value *source) {
       }
       return true;
     }
+  } else {
+    return true;
   }
   return false;
 }

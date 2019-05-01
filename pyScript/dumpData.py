@@ -1,36 +1,48 @@
 import sys
 import r2pipe
 
-tagLabelMap = dict()
-
-
-def preprocess():
+def fixCS(query):
+    res = query
     bFile = str(sys.argv[1]) + str(sys.argv[2])
     r2 = r2pipe.open(bFile)
     r2.cmd("aaa")
-    res = []
-    for x in (r2.cmd("afl").split("\n")):
-        if (len(x) > 0):
-            res.append(int((x.split(' ')[0]), 16))
 
-    for k, v in tagLabelMap.iteritems():
-        r2.cmd("s " + hex(v))
-        r2.cmd("sf.")
+    r2.cmd("s " + hex(query))
+    r2.cmd("sf.")
 
-        if (not v in res):
-            item = r2.cmd("/c jmp " + hex(v))
-            if (len(item) > 0):
-                tagLabelMap[k] = int(item.strip().split(' ')[0], 16)
-            else:
-                item = r2.cmd("/c jne " + hex(v))
-                if (len(item) > 0):
-                    item = r2.cmd("pd -1")
-                    tagLabelMap[k] = int(item.strip().split(' ')[0], 16)
+    item = r2.cmd("/c jmp " + hex(query))
+    if (len(item) > 0):
+        res = int(item.strip('|').strip().split(' ')[0], 16)
+    else:
+        item = r2.cmd("/c jne " + hex(query))
+        if (len(item) > 0):
+            item = r2.cmd("pd -1")
+            res = int(item.strip('|').strip().split(' ')[0], 16)
+    
+    r2.quit()
+    return res
+
+def fixVTable(query):
+    res = query
+    mind = 1000
+    bFile = str(sys.argv[1]) + str(sys.argv[2])
+    r2 = r2pipe.open(bFile)
+    r2.cmd("aaa")
+
+    items = r2.cmd("av")
+    arr = items.strip().split('\n')
+    for item in arr:
+        if('Vtable Found at ' in item):
+            vt = int(item.split('Vtable Found at')[1], 16)
+            if((vt-query) > 0 and (vt-query) < mind):
+                mind = vt-query
+                res = vt
 
     r2.quit()
-
+    return res
 
 def main():
+    tagLabelMap = dict()
     osCFG = dict()
     csCFG = dict()
     ciCFG = dict()
@@ -51,8 +63,6 @@ def main():
             rLine = fp.readline()
     fp.close()
 
-    preprocess()
-
     eFile = str(sys.argv[1]) + "stats.bin"
     with open(eFile, 'r') as fp:
         eLine = fp.readline()
@@ -61,19 +71,22 @@ def main():
             if (items[0] == '2'):
                 if (len(items) == 6):
                     key = (items[1], items[2], int(items[4], 10),
-                           tagLabelMap[int(items[5], 10)])
+                           fixCS(tagLabelMap[int(items[5], 10)]))
                 else:
                     key = (items[1], items[2], int(items[4], 10), 0)
 
                 if (not key in osCFG):
                     osCFG[key] = []
-                osCFG[key].append(tagLabelMap[int(items[3], 10)])
+                if(items[1] == '1'):
+                    osCFG[key].append(tagLabelMap[int(items[3], 10)])
+                else:
+                    osCFG[key].append(fixVTable(tagLabelMap[int(items[3], 10)]))
             if (items[0] == '3'):
                 tmp = []
                 tmp.append(items[1])
                 tmp.append(items[2])
                 for x in range(4, len(items), 1):
-                    tmp.append(tagLabelMap[int(items[x], 10)])
+                    tmp.append(fixCS(tagLabelMap[int(items[x], 10)]))
                 key = tuple(tmp)
                 if (not key in csCFG):
                     csCFG[key] = []
@@ -84,7 +97,10 @@ def main():
                 key = (items[1], items[2])
                 if (not key in ciCFG):
                     ciCFG[key] = []
-                ciCFG[key].append(tagLabelMap[int(items[3], 10)])
+                if(items[1] == '1'):
+                    ciCFG[key].append(tagLabelMap[int(items[3], 10)])
+                else:
+                    ciCFG[key].append(fixVTable(tagLabelMap[int(items[3], 10)]))
 
             eLine = fp.readline()
     fp.close()

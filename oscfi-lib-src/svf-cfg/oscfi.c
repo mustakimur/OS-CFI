@@ -371,13 +371,11 @@ oscfi_pcall_reference_monitor_d1(unsigned long ref_id, unsigned long ptr_addr,
     }
   }
 
-  fprintf(stderr, "%lu, %lx, %lx\n", ref_id, ptr_val, site1);
-
-  /* fprintf(stderr,
+  fprintf(stderr,
           "[OSCFI-LOG] Failed validation for <pcall call-site sensitivity "
           "depth 1> {%lu "
-          "=> %lx}\n",
-          ref_id, ptr_val); */
+          "=> %lx [%lx]}\n",
+          ref_id, ptr_val, site1);
 }
 
 void __attribute__((__used__))
@@ -404,8 +402,8 @@ oscfi_pcall_reference_monitor_d2(unsigned long ref_id, unsigned long ptr_addr,
   fprintf(stderr,
           "[OSCFI-LOG] Failed validation for <pcall call-site sensitivity "
           "depth 2> {%lu "
-          "=> %lx}\n",
-          ref_id, ptr_val);
+          "=> %lx [%lx, %lx]}\n",
+          ref_id, ptr_val, site1, site2);
 }
 
 void __attribute__((__used__))
@@ -433,19 +431,19 @@ oscfi_pcall_reference_monitor_d3(unsigned long ref_id, unsigned long ptr_addr,
   fprintf(stderr,
           "[OSCFI-LOG] Failed validation for <pcall call-site sensitivity "
           "depth 3> {%lu "
-          "=> %lx}\n",
-          ref_id, ptr_val);
+          "=> %lx[%lx, %lx, %lx]}\n",
+          ref_id, ptr_val, site1, site2, site3);
 }
 
 void __attribute__((__used__))
 static_vcall_reference_monitor(unsigned long ref_id, unsigned long vptr_addr,
                                unsigned long vtable_addr,
                                unsigned long target) {
-  unsigned long hash_key = (ref_id ^ target) % HASH_KEY_RANGE;
+  unsigned long hash_key = (ref_id ^ vtable_addr) % HASH_KEY_RANGE;
   if (STATIC_HASH_TABLE[hash_key] != NULL) {
     staticItem *temp = STATIC_HASH_TABLE[hash_key];
     while (temp != NULL) {
-      if (temp->ref_id == ref_id && temp->target == target) {
+      if (temp->ref_id == ref_id && temp->target == vtable_addr) {
         stats[9]++;
         return;
       }
@@ -454,8 +452,9 @@ static_vcall_reference_monitor(unsigned long ref_id, unsigned long vptr_addr,
   }
 
   fprintf(stderr,
-          "[OSCFI-LOG] Failed validation for <vcall supa fixer> {%lu => %lx}\n",
-          ref_id, target);
+          "[OSCFI-LOG] Failed validation for <vcall supa fixer> {%lu => %lx "
+          "[%lx]}\n",
+          ref_id, target, vtable_addr);
 }
 
 // initialize the hash table at the beginning of the program execution

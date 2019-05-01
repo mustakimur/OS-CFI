@@ -4264,23 +4264,25 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
 
   // Emit the actual call/invoke instruction.
   llvm::CallSite CS;
+  llvm::BasicBlock *Cont;
   if (!InvokeDest) {
     CS = Builder.CreateCall(CalleePtr, IRCallArgs, BundleList);
   } else {
-    llvm::BasicBlock *Cont = createBasicBlock("invoke.cont");
+    Cont = createBasicBlock("invoke.cont");
     CS = Builder.CreateInvoke(CalleePtr, Cont, InvokeDest, IRCallArgs,
                               BundleList);
-    // EmitBlock(Cont);
+    EmitBlock(Cont);
   }
   llvm::Instruction *CI = CS.getInstruction();
-  if (CS.isIndirectCall()) {
+  if (CS.isIndirectCall() && !Callee.isVirtual()) {
     llvm::Value *tempCalleePtr = CS.getCalledValue();
-    CI->eraseFromParent();
     std::hash<std::string> hash_fn;
     while (1) {
       tempCalleePtr = tempCalleePtr->stripPointerCasts();
       if (isa<llvm::LoadInst>(tempCalleePtr)) {
         auto *loadCalleePtr = dyn_cast<llvm::LoadInst>(tempCalleePtr);
+        CI->eraseFromParent();
+        //Cont->removeFromParent();
 
         // create an identification for the ICT
         std::string idCreator;
@@ -4315,7 +4317,7 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
         if (!InvokeDest) {
           CS = Builder.CreateCall(CalleePtr, IRCallArgs, BundleList);
         } else {
-          llvm::BasicBlock *Cont = createBasicBlock("invoke.cont");
+          Cont = createBasicBlock("invoke.cont");
           CS = Builder.CreateInvoke(CalleePtr, Cont, InvokeDest, IRCallArgs,
                                     BundleList);
           EmitBlock(Cont);
@@ -4328,6 +4330,8 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
       } else if (isa<llvm::PHINode>(tempCalleePtr)) {
         // if current IR is a phi node because of pointer-to-member-function
         auto *phiCalleePtr = dyn_cast<llvm::PHINode>(tempCalleePtr);
+        CI->eraseFromParent();
+        //Cont->removeFromParent();
 
         // to collect phi calleePtr address, we need to create another phi node
         // in parallel
@@ -4406,7 +4410,7 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
         if (!InvokeDest) {
           CS = Builder.CreateCall(CalleePtr, IRCallArgs, BundleList);
         } else {
-          llvm::BasicBlock *Cont = createBasicBlock("invoke.cont");
+          Cont = createBasicBlock("invoke.cont");
           CS = Builder.CreateInvoke(CalleePtr, Cont, InvokeDest, IRCallArgs,
                                     BundleList);
           EmitBlock(Cont);
