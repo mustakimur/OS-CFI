@@ -125,3 +125,15 @@ runspec  --action=run --config=spec2006-oscfi.cfg --tune=base --size=test --iter
 SOURCES=oscfi.c mpxrt.c mpxrt-utils.c ...
 ```
 3. Use the run.sh to start the system.
+
+## Usage
+* Try our sample exploitation:
+```text
+cd testSuite
+./run.sh
+```
+
+* Try spec 456.hmmer benchmark:
+```text
+./run.sh < inHmmer
+```
