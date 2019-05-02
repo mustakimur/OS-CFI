@@ -35,7 +35,6 @@ make
 
 echo "Static points-to analysis CFG generation ..."
 $OSCFG -svfmain -cxt -query=funptr -maxcxt=10 -flowbg=10000 -cxtbg=100000 -cpts -print-query-pts "$sourceDirectory""/""$progName"".0.4.opt.bc" > "$sourceDirectory""/outs.txt" 2> "$sourceDirectory""/stats.bin"
-$DIS "$progName"".0.4.opt.oscfg.bc"
 
 echo "Generating the binary ..."
 $LLC -filetype=obj "$progName"".0.4.opt.oscfg.bc"
@@ -48,7 +47,6 @@ cp dump_table.bin dump_table.back
 
 echo "Optimization phase ..."
 $OPT -load $CFG -llvm-inst-cfg -DIR_PATH="$sourceDirectory" < "$progName"".0.4.opt.oscfg.bc" > "$progName"".0.4.opt.oscfg.opt.bc"
-$DIS "$progName"".0.4.opt.oscfg.opt.bc"
 
 echo "Generating the binary with optimization ..."
 $LLC -filetype=obj "$progName"".0.4.opt.oscfg.opt.bc"
@@ -60,12 +58,15 @@ python $PYSCRIPT $sourceDirectory "$progName""_opt"
 
 echo "CFG Instrumentation phase ..."
 $OPT -load $CFG -llvm-inst-cfg -DIR_PATH="$sourceDirectory" < "$progName"".0.4.opt.oscfg.bc" > "$progName"".0.4.opt.oscfg.cfg.bc"
-$DIS "$progName"".0.4.opt.oscfg.cfg.bc"
 
 echo "Generating the secure binary with optimization ..."
 $LLC -filetype=obj "$progName"".0.4.opt.oscfg.cfg.bc"
 $CXX -mmpx -pthread -O0 "$progName"".0.4.opt.oscfg.cfg.o" -o "$progName""_exec"
 
+rm *.bin *.ll *.bc
+
+
+mkdir run
 cp "$progName""_exec" run/
 
 echo "Process complete. The secure binary is the run directory under project source directory."
