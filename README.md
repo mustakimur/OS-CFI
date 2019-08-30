@@ -1,6 +1,8 @@
 # Origin-sensitive Control Flow Integrity
 We propose a new context for CFI, origin sensitivity, that can effectively break down large ECs and reduce the average EC size. Origin-sensitive CFI (OS-CFI) takes the origin of the code pointer called by the ICT as the context and constrains the targets of the ICT with this context. It supports both C-style indirect calls and C++ virtual calls. Additionally, we leverage common hardware features in the commodity Intel processors (MPX and TSX) to secure and improve the performance of reference monitors of OS-CFI. 
 
+[Join us in the slack](https://join.slack.com/t/opencfi/shared_invite/enQtNzQ2MTM5MTA5NzM0LTdmMTQwZDU1YzEwNmE2ZDY4OTZiY2ExMDI1ZGVkOTdjYmYyNTNjNzVkOTYwNzdkNmY2OWNmMzhjMTUyNTJhZjc)
+
 ## Project Structure
 * llvm-src: LLVM/Clang 7.0 Source Directory
     * clang/lib/CodeGen: Instrumentation for update_mpx and reference monitor.
