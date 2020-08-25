@@ -3,6 +3,19 @@ We propose a new context for CFI, origin sensitivity, that can effectively break
 
 [Join us in the slack](https://join.slack.com/t/opencfi/shared_invite/enQtNzQ2MTM5MTA5NzM0LTdmMTQwZDU1YzEwNmE2ZDY4OTZiY2ExMDI1ZGVkOTdjYmYyNTNjNzVkOTYwNzdkNmY2OWNmMzhjMTUyNTJhZjc)
 
+## IMPORTANT: Licensing
+
+This project is licensed in GPLv3 with the following additional conditions: 
+
+1. If you plan to benchmark, compare, evaluate this project with intention to publish the results (including in a paper), you must contact us with your real identity, affiliation, and advisors, and a short description of how you will use our source code before using and/or download this project. In addition, you will provide an opportunity for us to comment on and help with technical and other issues related to this project you have during the development. Examples include but are not limited to failure to compile or incomplete protection.
+
+2. If you use any part of this project (excluding third-party software) and published a paper about it, you agree to open-source your project within one month of the official paper publication.
+
+If you do not agree to these conditions, please do not use our source code.
+
+**Justfication** This is a research prototype. Its sole purpose is to demonstrate that the original idea works. It is expected to have implementation flaws. We welcome efforts to re-produce/evaluate our results but request an opportunity to fix implementation flaws. Generally speaking, we value design flaws more but will try to fix implementation issues.
+If you plan to use this project in production, we would love to hear about it and provide help if needed. 
+
 ## Project Structure
 * llvm-src: LLVM/Clang 7.0 Source Directory
     * clang/lib/CodeGen: Instrumentation for update_mpx and reference monitor.
