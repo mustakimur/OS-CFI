@@ -13,7 +13,7 @@ This project is licensed in GPLv3 with the following additional conditions:
 
 If you do not agree to these conditions, please do not use our source code.
 
-**Justfication** This is a research prototype. Its sole purpose is to demonstrate that the original idea works. It is expected to have implementation flaws. We welcome efforts to re-produce/evaluate our results but request an opportunity to fix implementation flaws. Generally speaking, we value design flaws more but will try to fix implementation issues.
+**Justfication:** this is a research prototype. Its sole purpose is to demonstrate that the original idea works. It is expected to have implementation flaws. We welcome efforts to re-produce/evaluate our results but request an opportunity to fix implementation flaws. Generally speaking, we value design flaws more but will try to fix implementation issues.
 If you plan to use this project in production, we would love to hear about it and provide help if needed. 
 
 ## Project Structure
