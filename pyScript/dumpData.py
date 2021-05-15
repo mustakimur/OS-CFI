@@ -109,7 +109,7 @@ def main():
     csChoice = dict()
     ciChoice = dict()
 
-    for k, v in ciCFG.iteritems():
+    for k, v in ciCFG.items():
         ototal = 0
         ocount = 0
         itotal = 0
@@ -118,7 +118,7 @@ def main():
         csChoice[k] = 9999
         ciChoice[k] = 9999
 
-        for ok, ov in osCFG.iteritems():
+        for ok, ov in osCFG.items():
             if (k[1] == ok[1]):
                 ototal += len(set(ov))
                 ocount += 1
@@ -127,7 +127,7 @@ def main():
 
         ctotal = 0
         ccount = 0
-        for ck, cv in csCFG.iteritems():
+        for ck, cv in csCFG.items():
             if (k[1] == ck[1]):
                 ctotal += len(set(cv))
                 ccount += 1
@@ -140,7 +140,7 @@ def main():
             ciChoice[k] = ((float)(itotal) / (float)(icount))
 
     fChoice = dict()
-    for k, v in ciCFG.iteritems():
+    for k, v in ciCFG.items():
         if (ciChoice[k] <= osChoice[k] and ciChoice[k] <= csChoice[k]):
             fChoice[k] = 1
         elif (osChoice[k] < csChoice[k] and osChoice[k] < ciChoice[k]):
@@ -151,7 +151,7 @@ def main():
     osFile = str(sys.argv[1]) + "osCFG.bin"
     # cpoint, origin, originctx, target
     fw = open(osFile, "w")
-    for k, v in osCFG.iteritems():
+    for k, v in osCFG.items():
         if (fChoice[(k[0], k[1])] == 2):
             for item in v:
                 fw.write(
@@ -166,7 +166,7 @@ def main():
     fw2 = open(cs2File, "w")
     fw3 = open(cs3File, "w")
 
-    for k, v in csCFG.iteritems():
+    for k, v in csCFG.items():
         if (fChoice[(k[0], k[1])] == 3):
             ctx = ''
             c = 0
@@ -189,7 +189,7 @@ def main():
 
     ciFile = str(sys.argv[1]) + "ciCFG.bin"
     fw = open(ciFile, "w")
-    for k, v in ciCFG.iteritems():
+    for k, v in ciCFG.items():
         if (fChoice[(k[0], k[1])] == 1):
             for item in v:
                 fw.write(

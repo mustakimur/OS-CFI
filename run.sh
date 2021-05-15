@@ -1,72 +1,94 @@
-CC=$OSCFI_PATH/llvm-obj/bin/clang
-CXX=$OSCFI_PATH/llvm-obj/bin/clang++
-DIS=$OSCFI_PATH/llvm-obj/bin/llvm-dis
+CLANG=$OSCFI_PATH/llvm-obj/bin/clang
+CLANGPP=$OSCFI_PATH/llvm-obj/bin/clang++
+
 OPT=$OSCFI_PATH/llvm-obj/bin/opt
-OSCFG=$OSCFI_PATH/svf-src/Debug-build/bin/oscfg
-PYSCRIPT=$OSCFI_PATH/pyScript/dumpData.py
 LLC=$OSCFI_PATH/llvm-obj/bin/llc
+DIS=$OSCFI_PATH/llvm-obj/bin/llvm-dis
+
+OSCFG=$OSCFI_PATH/svf-src/debug-build/bin/oscfg
 CFG=$OSCFI_PATH/llvm-obj/lib/LLVMInstCFG.so
+PYSCRIPT=$OSCFI_PATH/pyScript/dumpData.py
+
 OSCFI_LIB=$OSCFI_PATH/oscfi-lib-src/svf-cfg/
 
-echo "Please, modify the Makefile.spec according to the README.md ..."
-read -p "Press any key to continue ..."
+echo "++++++++++++++++Asking user input+++++++++++++++++++++++++"
+echo "Enter target project source path (full path): "
+read tarDir
 
-echo "Enter project directory (Target source): "
-read sourceDirectory
+echo "Enter target program name: "
+read tarBin
+echo "-----------------------------------------------------------------------"
 
-echo "Enter project name (Target binary name): "
-read progName
+echo "+++++++++++++++++++++Change directory to ""$tarDir""+++++++++++++++++++++++"
+cd $tarDir
 
-if [ ${sourceDirectory:0:1} == '~' ]
-then
-  sourceDirectory="$HOME""${sourceDirectory:1}"
-fi 
+echo "++++++++++++++++++Copying OS-CFI Libs to project directory++++++++++++++++++++++"
+rm -rf oscfi-libs
+mkdir oscfi-libs
+cp $OSCFI_LIB/* oscfi-libs/
+echo "-----------------------------------------------------------------------"
 
-echo "In project directory ..."
-cd $sourceDirectory
+echo "++++++++++++Building the target project (assuming Makefile has been modified as expected)+++++++++++"
+export CC="$OSCFI_PATH""/llvm-obj/bin/clang"
+export CXX="$OSCFI_PATH""/llvm-obj/bin/clang++"
+export CFLAGS="-O0 -Xclang -disable-O0-optnone -flto -std=gnu89 -D_GNU_SOURCE -fpermissive -Wno-return-type -include oscfi-libs/oscfi.h -mmpx -pthread"
+export CXXFLAGS="-O0 -Xclang -disable-O0-optnone -flto -std=c++03 -D_GNU_SOURCE -fpermissive -Wno-return-type -include oscfi-libs/oscfi.h -mmpx -pthread"
+export LFILES="oscfi-libs/oscfi.o oscfi-libs/mpxrt.o oscfi-libs/mpxrt-utils.o"
 
-echo "Copying OS-CFI Libs to project directory ..."
-cp $OSCFI_LIB/* .
-
-echo "Building the project ..."
 make clean
-rm *.ll *.bc *.bin
+
+$CC $CFLAGS -c oscfi-libs/oscfi.c -o oscfi-libs/oscfi.o
+$CC $CFLAGS -c oscfi-libs/mpxrt.c  -o oscfi-libs/mpxrt.o
+$CC $CFLAGS -c oscfi-libs/mpxrt-utils.c -o oscfi-libs/mpxrt-utils.o
+
 make
+echo "-----------------------------------------------------------------------"
 
-echo "Static points-to analysis CFG generation ..."
-$OSCFG -svfmain -cxt -query=funptr -maxcxt=10 -flowbg=10000 -cxtbg=100000 -cpts -print-query-pts "$sourceDirectory""/""$progName"".0.4.opt.bc" > "$sourceDirectory""/outs.txt" 2> "$sourceDirectory""/stats.bin"
+echo "++++++++++++++++++CFG generation with SVF-SUPA++++++++++++++++++++++++"
+$OSCFG -svfmain -cxt -query=funptr -maxcxt=10 -flowbg=10000 -cxtbg=100000 -cpts -print-query-pts "$tarDir""/""$tarBin"".0.4.opt.bc" > "$tarDir""/outs.txt" 2> "$tarDir""/stats.bin"
+echo "-----------------------------------------------------------------------"
 
-echo "Generating the binary ..."
-$LLC -filetype=obj "$progName"".0.4.opt.oscfg.bc"
-$CXX -mmpx -pthread -O0  "$progName"".0.4.opt.oscfg.o" -o "$progName""_dump"
+echo "+++++++++++++++++++Build the target program+++++++++++++++++++++++++"
+$LLC -filetype=obj "$tarBin"".0.4.opt.oscfg.bc"
+$CLANGPP -mmpx -pthread -O0  "$tarBin"".0.4.opt.oscfg.o" -o "$tarBin""_dump"
+echo "-----------------------------------------------------------------------"
 
-echo "Dumping CFG table and run python script ..."
-objdump -s -j cfg_label_tracker "$progName""_dump" > dump_table.bin
-python $PYSCRIPT $sourceDirectory "$progName""_dump"
+echo "+++++++++++++++++CFG table processing (1st phase)+++++++++++++++++++++"
+objdump -s -j cfg_label_tracker "$tarBin""_dump" > dump_table.bin
+python3 $PYSCRIPT $tarDir "$tarBin""_dump"
 cp dump_table.bin dump_table.back
+echo "-----------------------------------------------------------------------"
 
-echo "Optimization phase ..."
-$OPT -load $CFG -llvm-inst-cfg -DIR_PATH="$sourceDirectory" < "$progName"".0.4.opt.oscfg.bc" > "$progName"".0.4.opt.oscfg.opt.bc"
+echo "++++++++++++++++++++++++++Optimization phase+++++++++++++++++++++++++++"
+$OPT -load $CFG -llvm-inst-cfg -DIR_PATH="$tarDir" < "$tarBin"".0.4.opt.oscfg.bc" > "$tarBin"".0.4.opt.oscfg.opt.bc"
+echo "-----------------------------------------------------------------------"
 
-echo "Generating the binary with optimization ..."
-$LLC -filetype=obj "$progName"".0.4.opt.oscfg.opt.bc"
-$CXX -mmpx -pthread -O0 "$progName"".0.4.opt.oscfg.opt.o" -o "$progName""_opt"
+echo "+++++++++++++++Building the program with optimization++++++++++++++++++++++"
+$LLC -filetype=obj "$tarBin"".0.4.opt.oscfg.opt.bc"
+$CLANGPP -mmpx -pthread -O0 "$tarBin"".0.4.opt.oscfg.opt.o" -o "$tarBin""_opt"
+echo "-----------------------------------------------------------------------"
 
-echo "Dumping CFG table and run python script ..."
-objdump -s -j cfg_label_tracker "$progName""_opt" > dump_table.bin
-python $PYSCRIPT $sourceDirectory "$progName""_opt"
+echo "+++++++++++++++++CFG table processing (2nd phase)+++++++++++++++++++++"
+objdump -s -j cfg_label_tracker "$tarBin""_opt" > dump_table.bin
+python3 $PYSCRIPT $tarDir "$tarBin""_opt"
+echo "-----------------------------------------------------------------------"
 
-echo "CFG Instrumentation phase ..."
-$OPT -load $CFG -llvm-inst-cfg -DIR_PATH="$sourceDirectory" < "$progName"".0.4.opt.oscfg.bc" > "$progName"".0.4.opt.oscfg.cfg.bc"
+echo "+++++++++++++++++Instrumenting CFG to the binary+++++++++++++++++++++"
+$OPT -load $CFG -llvm-inst-cfg -DIR_PATH="$tarDir" < "$tarBin"".0.4.opt.oscfg.bc" > "$tarBin"".0.4.opt.oscfg.cfg.bc"
+echo "-----------------------------------------------------------------------"
 
-echo "Generating the secure binary with optimization ..."
-$LLC -filetype=obj "$progName"".0.4.opt.oscfg.cfg.bc"
-$CXX -mmpx -pthread -O0 "$progName"".0.4.opt.oscfg.cfg.o" -o "$progName""_exec"
+echo "+++++++++++++++++++++++Final binary++++++++++++++++++++++++++++++"
+$LLC -filetype=obj "$tarBin"".0.4.opt.oscfg.cfg.bc"
+$CLANGPP -mmpx -pthread -O0 "$tarBin"".0.4.opt.oscfg.cfg.o" -o "$tarBin""_exec"
+echo "-----------------------------------------------------------------------"
 
-rm *.bin *.ll *.bc
+echo "+++++++++++++++++++++++Removing unnecessary files++++++++++++++++++++++++++++++"
+rm -rf *.bin *.ll *.bc *.o
+echo "-----------------------------------------------------------------------"
 
+echo "+++++++++++++++++++++++Removing unnecessary files++++++++++++++++++++++++++++++"
+mkdir -p run
+cp -u "$tarBin""_exec" run/
+echo "-----------------------------------------------------------------------"
 
-mkdir run
-cp "$progName""_exec" run/
-
-echo "Process complete. The secure binary is the run directory under project source directory."
+echo "****************** Process complete. Check run/ for secured binary *****************"
