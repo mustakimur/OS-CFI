@@ -1,132 +1,137 @@
 # Origin-sensitive Control Flow Integrity
-We propose a new context for CFI, origin sensitivity, that can effectively break down large ECs and reduce the average EC size. Origin-sensitive CFI (OS-CFI) takes the origin of the code pointer called by the ICT as the context and constrains the targets of the ICT with this context. It supports both C-style indirect calls and C++ virtual calls. Additionally, we leverage common hardware features in the commodity Intel processors (MPX and TSX) to secure and improve the performance of reference monitors of OS-CFI. 
+We propose a new context for CFI, origin sensitivity, that can effectively break down large ECs and reduce the average and largest EC size. Origin-sensitive CFI (OS-CFI) takes the origin of the code pointer called by an ICT as the context and constrains the targets of the ICT with this context. It supports both C-style indirect calls and C++ virtual calls. Additionally, we leverage common hardware features in the commodity Intel processors (MPX and TSX) to improve both security and performance of OS-CFI. Our evaluation shows that OS-CFI can substantially reduce the largest and average EC sizes (by 98% in some cases) and has strong performance – 7.6% overhead on average for all C/C++ benchmarks of SPEC CPU2006 and NGINX.
+
+*Note: Intel MPX is deprecated in latest CPU and kernel, so some part of code will require to adjust for latest.*
 
 [Join us in the slack](https://join.slack.com/t/opencfi/shared_invite/enQtNzQ2MTM5MTA5NzM0LTdmMTQwZDU1YzEwNmE2ZDY4OTZiY2ExMDI1ZGVkOTdjYmYyNTNjNzVkOTYwNzdkNmY2OWNmMzhjMTUyNTJhZjc)
 
-## IMPORTANT: Licensing
+## IMPORTANT
+
+This is a research prototype. Its sole purpose is to demonstrate that the original concept works. It is expected to have implementation flaws or can be broken/deprecated to latest sysyem. We welcome efforts to re-produce/evaluate our results but request an opportunity to fix any technical flaws. Generally speaking, we value design flaws more but will try to fix technical issues too.
+
+**If you plan to use this project in production, we would love to hear about it and provide help if needed (Join our slack channel).**
 
 This project is licensed in GPLv3 with the following additional conditions: 
 
-1. If you plan to benchmark, compare, evaluate this project with intention to publish the results (including in a paper), you must contact us with your real identity, affiliation, and advisors, and a short description of how you will use our source code before using and/or downloading this project. In addition, you will provide an opportunity for us to comment on and help with technical and other issues related to this project you have during the development. Examples include but are not limited to failure to compile or incomplete protection.
+1. If you plan to benchmark, compare, evaluate this project with intention to publish the results (including in a paper), you must first contact us with your real identity, affiliation, and advisors, and a short description of how you will use our source code (before any claim). In addition, you should provide an opportunity for us to comment on and help with technical and other issues related to this project. Examples include but are not limited to failure to compile or incomplete protection.
 
-2. If you use any part of this project (excluding third-party software) and published a paper about it, you agree to open-source your project within one month of the official paper publication.
+2. If you use any part of this project (excluding third-party software) and published a paper about it, you agree to open-source your project within one month of the paper (of any publicly available location) publication.
 
-If you do not agree to these conditions, please do not use our source code.
-
-**Justfication:** this is a research prototype. Its sole purpose is to demonstrate that the original idea works. It is expected to have implementation flaws. We welcome efforts to re-produce/evaluate our results but request an opportunity to fix implementation flaws. Generally speaking, we value design flaws more but will try to fix implementation issues.
-If you plan to use this project in production, we would love to hear about it and provide help if needed. 
+*Note: If you do not agree to these conditions, please do not use our source code.*
 
 ## Project Structure
-* llvm-src: LLVM/Clang 7.0 Source Directory
-    * clang/lib/CodeGen: Instrumentation for update_mpx and reference monitor.
-    * llvm/lib/Transforms/instCFG: Instrument CFG, optimize instrumentation, and replace reference monitor.
-* oscfi-lib-src: OS-CFI source code for reference monitor and others.
-* svf-src: lib/DDA is modified to use by tools/OSCFG.
+- **llvm-src:** LLVM/Clang 7.0 Source Directory.
+    - **clang/lib/CodeGen:** Fake reference monitor and metadata update Instrumentation.
+    - **llvm/lib/Transforms/instCFG:** CFG, optimization, and original reference monitor instrumentation.
+- **oscfi-lib-src:** OSCFI reference monitor and metadata source code.
+- **svf-src:** Modified DDA to generate CFG and tag locations (for label-as-value).
+- **pyScript:** Python code works on DDA generated CFG to reconstruct the original CFG.
+- **testSuite:** Stores sample cases to test the project.
+- **run.sh:** Bash script to run the OSCFI on any targeted project.
 
 ## Overall Process
-* Step 1: Copy the OSCFI enforcement code.
-* Step 2: Build the project with clang/clang++.
-* Step 3: Run the DDA based OSCFG tool to generate the CFG and create labels for translation.
-* Step 4: Generate the binary, dump the section 'cfg_label_tracker', and run the python script to process the CFG.
-* Step 5: Instrument the CFG with the optimization LLVM pass.
-* Step 6: Repeat step 4 and 5 to adjust the CFG change due to optimization.
-* Step 7: Generate final secure binary.
+- Step 1: Copy OSCFI monitor codes.
+- Step 2: Build the target project with OSCFI clang/clang++.
+- Step 3: Run SVF-SUPA (DDA) from OSCFI to generate the CFG. It also creates labels for translation (also known as  label-as-value).
+- Step 4: Build the binary. Later, dump the section 'cfg_label_tracker' from the binary. Finally, run a python script to reconstruct the CFG.
+- Step 5: Instrument the CFG using a LLVM pass.
+- Step 6: Repeat step 4 and 5 to reconstruct the CFG due to optimization effect.
+- Step 7: Build the final binary (secured by OSCFI).
 
 
 ## Installation Guideline
-1. Install required binary:
-```text
-sudo apt install cmake g++ gcc python bash git python-pip radare2
+The following guideline assumes a fresh [ubuntu:21.04](https://github.com/tianon/docker-brew-ubuntu-core/blob/4b7cb6f04bc4054f9ab1fa42b549caa1a41b7c92/hirsute/Dockerfile) docker container has been used. We recommend to use the docker installation guideline (check above).
+
+Following commands are for preparing basic tools:
+```
+apt update
+apt upgrade
+apt install git cmake g++ python python3-pip wget
+```
+
+Following commands are for preparing radare2 (a binary diassembler):
+```
+wget https://radare.mikelloc.com/get/4.5.0-git/radare2\_4.5.0-git\_amd64.deb
+dpkg -i radare2\_4.5.0-git\_amd64.deb
 pip install r2pipe
-```
-2. Git clone the project:
-```text
-git clone https://github.com/mustakcsecuet/OS-CFI.git
-cd OS-CFI
-# copy the project path and save it
-EDITOR ~/.profile
-export OSCFI_PATH="$HOME/../OS-CFI"
-```
-***Note: You can skip step 3, 4, 5, 7, and 8 if you have already configured Gold plugin for another compiler.***
-
-3. Install required library for Gold plugin:
-```text
-sudo apt-get install linux-headers-$(uname -r) csh gawk automake libtool bison flex libncurses5-dev
-# Check 'makeinfo -v'. If 'makeinfo' does not exist
-sudo apt-get install apt-file texinfo texi2html
-sudo apt-file update
-sudo apt-file search makeinfo
+rm radare2\_4.5.0-git\_amd64.debrm radare2\_4.5.0-git\_amd64.deb
 ```
 
-4. Download binutils source code:
-```text
-cd ~
+Following commands are for configuring the build:
+```
+git clone https://github.com/mustakimur/OS-CFI.git
+echo "export OSCFI_PATH=\\"/home/OS-CFI\\"" >> ~/.profile
+source ~/.profile
+```
+
+Following commands are for preparing Gold plugin build:
+```
+apt-get install linux-headers-5.11.0-17-generic csh gawk automake libtool bison flex libncurses5-dev
+apt-get install apt-file texinfo texi2html
+apt-file update
+apt-file search makeinfo
+```
+
+Following commands are for building binutils required for Gold plugin:
+```
+cd /home
 git clone --depth 1 git://sourceware.org/git/binutils-gdb.git binutils
-```
-
-5. Build binutils:
-```text
-mkdir build
-cd build
-../binutils/configure --enable-gold --enable-plugins --disable-werror
+mkdir binutils-build
+cd ../binutils-build
+../binutils/configure --disable-gdb --enable-gold --enable-plugins --disable-werrorcd ../binutils-build/
 make
 ```
 
-6. Build the compiler (use the binutils directory if you already have one):
-```text
+Following commands are for building compiler with Gold plugin:
+```
 cd $OSCFI_PATH/
 mkdir llvm-obj
-cmake -DLLVM_BINUTILS_INCDIR="path_to_binutils/include" -G "Unix Makefiles" ../llvm-src
+cd llvm-obj/
+cmake -DLLVM_BINUTILS_INCDIR="/home/binutils/include" -G "Unix Makefiles" ../llvm-src
 make -j8
 ```
 
-7. Backup ar, nm, ld and ranlib:
-```text
-cd ~
+Following commands are for replacing existing binaries with Gold plugin binaries:
+```
+cd /home
 mkdir backup
 cd /usr/bin/
-cp ar ~/backup/
-cp nm ~/backup/
-cp ld ~/backup/
-cp ranlib ~/backup/
-```
 
-8. Replace ar, nm, ld and ranlib:
-```text
-cd /usr/bin/
-sudo cp ~/build/binutils/ar ./
-sudo rm nm
-sudo cp ~/build/binutils/nm-new ./nm
-sudo cp ~/build/binutils/ranlib ./
-sudo cp ~/build/gold/ld-new ./ld
-```
+cp ar /home/backup/
+cp nm /home/backup/
+cp ld /home/backup/
+cp ranlib /home/backup/
 
-9. Install LLVMgold.so to /usr/lib/bfd-plugins:
-```text
+cp /home/binutils-build/binutils/ar ./
+rm nm
+cp /home/binutils-build/binutils/nm-new ./nm
+cp /home/binutils-build/binutils/ranlib ./
+cp /home/binutils-build/gold/ld-new ./ld
+
 cd /usr/lib
-sudo mkdir bfd-plugins
 cd bfd-plugins
-sudo cp $OSCFI_PATH/llvm_obj/lib/LLVMgold.so ./
-sudo cp $OSCFI_PATH/llvm_obj/lib/libLTO.* ./
+cp $OSCFI_PATH/llvm-obj/lib/LLVMgold.so ./
+cp $OSCFI_PATH/llvm-obj/lib/libLTO.* ./
 ```
 
-10. To Build SVF-SUPA:
-```text
-export LLVM_SRC=your_path_to_llvm-7.0.0.src
-export LLVM_OBJ=your_path_to_llvm-7.0.0.obj
-export LLVM_DIR=your_path_to_llvm-7.0.0.obj
+Following commands are for building SVF-SUPA (for CFG generation):
+```
+cd $OSCFI_PATH/svf-src
+
+export LLVM_SRC="$OSCFI_PATH/llvm-src"
+export LLVM_OBJ="$OSCFI_PATH/llvm-obj"
+export LLVM_DIR="$OSCFI_PATH/llvm-obj"
 export PATH=$LLVM_DIR/bin:$PATH
 
-cd $OSCFI_HOME/svf-src
-mkdir Debug-build
-cd Debug-build
+mkdir debug-build
+cd debug-build
 cmake -D CMAKE_BUILD_TYPE:STRING=Debug ../
 make -j4
 
-export PATH=$OSCFI_HOME/svf-src/Debug-build/bin:$PATH
+export PATH=$OSCFI_PATH/svf-src/debug-build/bin:$PATH
 ```
 
-## Spec Benchmark Build Guideline
+## Spec Benchmark Build Guideline [deprecated: update soon]
 1. Put spec2006-oscfi.cfg file into folder $CPU2006_HOME/config and analyze CPU2006 to generate bc files
 ```text
 cd $CPU2006_HOME
@@ -141,14 +146,14 @@ SOURCES=oscfi.c mpxrt.c mpxrt-utils.c ...
 ```
 3. Use the run.sh to start the system.
 
-## Usage
-* Try our sample exploitation:
-```text
+## Sample Tests
+- Vulnerable code exploitation prevented by OS-CFI:
+```
 cd testSuite
-./run.sh
+./test_run.sh
 ```
 
-* Try spec 456.hmmer benchmark:
-```text
-./run.sh < inHmmer
+- For CPU2006spec 456.hmmer benchmark:
+```
+./test_hmmer.sh < inHmmer
 ```
