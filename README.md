@@ -38,8 +38,13 @@ This project is licensed in GPLv3 with the following additional conditions:
 - Step 6: Repeat step 4 and 5 to reconstruct the CFG due to optimization effect.
 - Step 7: Build the final binary (secured by OSCFI).
 
-
-## Installation Guideline
+## Docker Installation
+To build a docker image, we have provided a Dockerfile. Follow the following commands to build and run:
+```
+docker build -t <any-name>/oscfi:1.0 .
+docker run -it <any-name>/oscfi:1.0 /bin/bash
+```
+## Manual Installation
 The following guideline assumes a fresh [ubuntu:21.04](https://github.com/tianon/docker-brew-ubuntu-core/blob/4b7cb6f04bc4054f9ab1fa42b549caa1a41b7c92/hirsute/Dockerfile) docker container has been used. We recommend to use the docker installation guideline (check above).
 
 Following commands are for preparing basic tools:
