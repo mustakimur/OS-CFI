@@ -77,8 +77,8 @@ Following commands are for building binutils required for Gold plugin:
 cd /home
 git clone --depth 1 git://sourceware.org/git/binutils-gdb.git binutils
 mkdir binutils-build
-cd ../binutils-build
-../binutils/configure --disable-gdb --enable-gold --enable-plugins --disable-werrorcd ../binutils-build/
+cd binutils-build
+../binutils/configure --disable-gdb --enable-gold --enable-plugins --disable-werror
 make
 ```
 
