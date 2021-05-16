@@ -5,7 +5,6 @@ COPY oscfi-lib-src /home/OS-CFI/oscfi-lib-src/
 COPY pyScript /home/OS-CFI/pyScript/
 COPY svf-src /home/OS-CFI/svf-src/
 COPY testSuite /home/OS-CFI/testSuite/
-COPY build.sh /home/OS-CFI/
 COPY run.sh /home/OS-CFI/
 COPY README.md /home/OS-CFI/
 COPY inHmmer /home/OS-CFI/
