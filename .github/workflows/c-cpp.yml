@@ -9,10 +9,10 @@ on:
 jobs:
   build:
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu:21.04
 
     steps:
     - uses: actions/checkout@v2
-    - name: docker
-      run: docker build -t mustakimur:oscfi:1.0 .
+    - name: build
+      run: ./build.sh
     
