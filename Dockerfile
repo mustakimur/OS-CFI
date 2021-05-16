@@ -13,8 +13,7 @@ COPY LICENSE /home/OS-CFI/
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN chmod +x /home/OS-CFI/build.sh && \
-    chmod +x /home/OS-CFI/run.sh && \
+RUN chmod +x /home/OS-CFI/run.sh && \
     chmod +x /home/OS-CFI/testSuite/test_run.sh
 
 RUN apt-get -y update && \
